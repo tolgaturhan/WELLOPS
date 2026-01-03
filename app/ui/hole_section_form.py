@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QComboBox,
     QDoubleSpinBox,
+    QDialog,
 )
 
 from app.core.rules.hole_section_rules import (
@@ -65,11 +66,11 @@ class HoleSectionForm(QWidget):
     """
 
     _HOLE_LABEL_BY_KEY: Dict[str, str] = {
-        "HSE_26": '26” HSE',
-        "HSE_17_1_2": '17 1/2” HSE',
-        "HSE_12_1_4": '12 1/4” HSE',
-        "HSE_8_1_2": '8 1/2” HSE',
-        "HSE_6": '6” HSE',
+        "HSE_26": '26" HSE',
+        "HSE_17_1_2": '17 1/2" HSE',
+        "HSE_12_1_4": '12 1/4" HSE',
+        "HSE_8_1_2": '8 1/2" HSE',
+        "HSE_6": '6" HSE',
     }
 
     _TICKET_ROWS: List[_TicketRow] = [
@@ -167,7 +168,7 @@ class HoleSectionForm(QWidget):
 
         hole_label = self._HOLE_LABEL_BY_KEY.get(self._hole_node_key, self._hole_node_key)
 
-        title = QLabel(f"Hole Section Form — {hole_label}")
+        title = QLabel(f"Hole Section Form - {hole_label}")
         title_font = title.font()
         title_font.setBold(True)
         title_font.setPointSize(title_font.pointSize() + 2)
@@ -362,7 +363,7 @@ class HoleSectionForm(QWidget):
         self.edt_tfa_in2.setPlaceholderText("Auto")
 
         nt_layout.addWidget(self.edt_nozzle_summary, 2)
-        nt_layout.addWidget(QLabel("TFA (IN²)"))
+        nt_layout.addWidget(QLabel("TFA (IN^2)"))
         nt_layout.addWidget(self.edt_tfa_in2, 1)
 
         form.addRow("BRAND / PDC-TRICONE", brand_kind)
@@ -523,7 +524,7 @@ class HoleSectionForm(QWidget):
     # ------------------------------------------------------------------
     def _on_nozzle_clicked(self, _event) -> None:
         dlg = NozzleDialog(initial_nozzles=self._nozzles, parent=self)
-        if dlg.exec() == dlg.Accepted:
+        if dlg.exec() == QDialog.Accepted:
             res = dlg.get_result()
             if res is not None:
                 self._nozzles = list(res.nozzles)

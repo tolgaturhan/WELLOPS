@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict, Optional, Set, Tuple
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -17,9 +17,6 @@ from PySide6.QtWidgets import (
     QMenuBar,
 )
 
-from app.ui.tree.well_tree_widget import WellTreeWidget
-
-# NOTE: wells_repo import is intentionally lazy (zip snapshot may omit app/data/wells_repo.py).
 
 def _repo_list_wells():
     """Lazy import for wells repository (keeps UI import-safe)."""
@@ -29,7 +26,7 @@ def _repo_list_wells():
     except Exception as e:  # pragma: no cover
         raise ImportError(
             "Repository module not available: app.data.wells_repo.list_wells. "
-            "Check project wiring (Snapshot 2026-01-03 notes repo missing)."
+            "Check project wiring."
         ) from e
 
 
@@ -41,43 +38,45 @@ def _repo_create_draft_well():
     except Exception as e:  # pragma: no cover
         raise ImportError(
             "Repository module not available: app.data.wells_repo.create_draft_well. "
-            "Check project wiring (Snapshot 2026-01-03 notes repo missing)."
+            "Check project wiring."
+        ) from e
+
+
+def _repo_delete_well():
+    """Lazy import for wells repository (keeps UI import-safe)."""
+    try:
+        from app.data.wells_repo import delete_well  # type: ignore
+        return delete_well
+    except Exception as e:  # pragma: no cover
+        raise ImportError(
+            "Repository module not available: app.data.wells_repo.delete_well. "
+            "Check project wiring."
         ) from e
 
 
 class _SimpleMessagePage(QWidget):
-    """Small internal fallback page (English-only messages)."""
-
-    def __init__(self, message: str, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
+    def __init__(self, message: str):
+        super().__init__()
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
         label = QLabel(message)
         label.setWordWrap(True)
-        label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         layout.addWidget(label)
         layout.addStretch(1)
 
 
-class MainWindows(QMainWindow):
+class MainWindow(QMainWindow):
     """
-    Main window:
-      - Left: Well tree
-      - Right: Router stack (single-router UX)
+    Main window that hosts:
+      - Left: well tree
+      - Right: stacked pages
+      - Menu: Create New Well
     """
 
-    # Fixed list of hole node keys (tree nodes, not Step3 list items)
-    _HOLE_NODE_KEYS: Set[str] = {
-        "hole_section_26",
-        "hole_section_17_5",
-        "hole_section_12_25",
-        "hole_section_8_5",
-        "hole_section_6",
-    }
+    def __init__(self):
+        super().__init__()
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
         self.setWindowTitle("TPIC WellOps")
+        self._settings = QSettings("TPIC", "WellOps")
 
         # In-memory (UI-only) enabled hole sizes per well (KEY MUST BE str / well_id TEXT)
         self._enabled_hole_sizes: Dict[str, Set[str]] = {}
@@ -93,22 +92,32 @@ class MainWindows(QMainWindow):
         self._stack.addWidget(self._default_page)
         self._stack.setCurrentWidget(self._default_page)
 
-        # Left tree
-        self.well_tree = WellTreeWidget()
-        self.well_tree.node_clicked.connect(self._on_tree_node_clicked)
+        self._init_ui()
 
-        # Layout with splitter
-        splitter = QSplitter(Qt.Horizontal)
+    # ----------------------------------------------------------------------------------
+    # UI
+    # ----------------------------------------------------------------------------------
+    def _init_ui(self) -> None:
+        splitter = QSplitter(Qt.Horizontal, self)
+
+        from app.ui.tree.well_tree_widget import WellTreeWidget  # type: ignore
+        self.well_tree = WellTreeWidget(self)
         splitter.addWidget(self.well_tree)
-        splitter.addWidget(self._stack)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
 
-        container = QWidget()
+        splitter.addWidget(self._stack)
+
+        splitter.setStretchFactor(0, 2)
+        splitter.setStretchFactor(1, 8)
+
+        container = QWidget(self)
         root_layout = QHBoxLayout(container)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.addWidget(splitter)
         self.setCentralWidget(container)
+
+        # IMPORTANT: WellTreeWidget emits node_clicked (well_id, node_key)
+        self.well_tree.node_clicked.connect(self._on_tree_node_clicked)
+        self.well_tree.well_delete_requested.connect(self._on_well_delete_requested)
 
         # Menu
         self._build_menu()
@@ -129,7 +138,7 @@ class MainWindows(QMainWindow):
         self.act_new_well.triggered.connect(self._on_create_new_well)
         menu_file.addAction(self.act_new_well)
 
-        self.act_reload = QAction("Reload Wells", self)
+        self.act_reload = QAction("Reload", self)
         self.act_reload.triggered.connect(self.reload_wells)
         menu_file.addAction(self.act_reload)
 
@@ -146,6 +155,7 @@ class MainWindows(QMainWindow):
         try:
             wells = _repo_list_wells()()
             self.set_wells(wells)
+            self._apply_last_well_expand()
         except Exception as e:
             QMessageBox.warning(self, "Warning", f"Failed to load wells.\n\nDetails:\n{e!r}")
 
@@ -157,6 +167,26 @@ class MainWindows(QMainWindow):
           - status: str
         """
         self.well_tree.set_wells(wells)
+        for w in wells:
+            wid = str(w.get("id", "")).strip()
+            if not wid:
+                continue
+            enabled = self._enabled_hole_sizes.get(wid, set())
+            self.well_tree.set_enabled_hole_sizes(wid, enabled)
+
+    def _apply_last_well_expand(self) -> None:
+        last_well_id = str(self._settings.value("last_well_id", "") or "")
+        self.well_tree.expand_only_well(last_well_id)
+
+    # ----------------------------------------------------------------------------------
+    # Stack helper
+    # ----------------------------------------------------------------------------------
+    def _show_widget(self, w: QWidget) -> None:
+        idx = self._stack.indexOf(w)
+        if idx == -1:
+            self._stack.addWidget(w)
+            idx = self._stack.indexOf(w)
+        self._stack.setCurrentIndex(idx)
 
     # ----------------------------------------------------------------------------------
     # New Well Flow (FINAL)
@@ -190,7 +220,11 @@ class MainWindows(QMainWindow):
         else:
             # Some dialogs expose the value as an attribute/property (e.g. dlg.well_name)
             val = getattr(dlg, "well_name", "")
+            # FIX: dlg.well_name can be a method (callable)
+            if callable(val):
+                val = val()
             well_name = (val or "").strip()
+
         if not well_name:
             QMessageBox.warning(self, "Warning", "Well Name cannot be empty.")
             return
@@ -204,7 +238,8 @@ class MainWindows(QMainWindow):
 
         # Refresh tree and select the well
         self.reload_wells()
-        self.well_tree.select_well_by_id(well_id)
+        # FIX: WellTreeWidget API is select_well_root (not select_well_by_id)
+        self.well_tree.select_well_root(well_id)
 
         # Open wizard on right panel
         wiz = self._create_wizard_new_well(well_id=well_id, well_name=well_name)
@@ -223,139 +258,136 @@ class MainWindows(QMainWindow):
             return WizardNewWell(well_id, well_name)
 
     # ----------------------------------------------------------------------------------
-    # Router (single router UX)
+    # Router (single router UX) - keep as-is in your snapshot
     # ----------------------------------------------------------------------------------
     def _on_tree_node_clicked(self, well_id: str, node_key: str) -> None:
-        # well_id is TEXT => force str (defensive)
         wid = str(well_id)
 
-        # Cache key
+        if node_key.startswith("HSE_") and not self._is_hole_section_enabled(wid, node_key):
+            self._show_widget(
+                _SimpleMessagePage(
+                    "This hole section is disabled. Enable it in HOLE SECTION and click Apply."
+                )
+            )
+            return
+
         cache_key = (wid, node_key)
 
-        # Return cached widget if exists
         if cache_key in self._widget_cache:
             self._show_widget(self._widget_cache[cache_key])
             return
 
-        widget = self._route_create_widget(wid, node_key)
-        self._widget_cache[cache_key] = widget
-        self._show_widget(widget)
+        w = self._route_node_to_widget(wid, node_key)
+        self._widget_cache[cache_key] = w
+        self._show_widget(w)
 
-    def _route_create_widget(self, well_id: str, node_key: str) -> QWidget:
-        # WELL NAME -> overview page message
-        if node_key == "well_name":
-            return self._try_create_well_overview_page()
+    def _route_node_to_widget(self, well_id: str, node_key: str) -> QWidget:
+        if node_key == "WELL_NAME":
+            try:
+                from app.ui.well_overview_page import WellOverviewPage  # type: ignore
+            except Exception:
+                return _SimpleMessagePage("WellOverviewPage could not be loaded.")
 
-        # Step pages
-        if node_key == "well_identity":
-            return self._try_create_step1_identity(well_id)
-
-        if node_key == "trajectory":
-            return self._try_create_step2_trajectory(well_id)
-
-        if node_key == "hole_section":
-            return self._try_create_step3_hole_program(well_id)
-
-        # Hole section forms
-        if node_key in self._HOLE_NODE_KEYS:
-            enabled = self.is_hole_size_enabled(well_id, node_key)
-            if not enabled:
-                return self._try_create_disable_section_page(node_key)
-            return self._try_create_hole_section_form(well_id, node_key)
-
-        return _SimpleMessagePage("Unknown section.")
-
-    def _show_widget(self, widget: QWidget) -> None:
-        if self._stack.indexOf(widget) < 0:
-            self._stack.addWidget(widget)
-        self._stack.setCurrentWidget(widget)
-
-    # ----------------------------------------------------------------------------------
-    # Enabled hole sizes (UI-only)
-    # ----------------------------------------------------------------------------------
-    def set_enabled_hole_sizes(self, well_id: str, enabled_node_keys: Set[str]) -> None:
-        self._enabled_hole_sizes[str(well_id)] = set(enabled_node_keys)
-
-    def get_enabled_hole_sizes(self, well_id: str) -> Set[str]:
-        return set(self._enabled_hole_sizes.get(str(well_id), set()))
-
-    def is_hole_size_enabled(self, well_id: str, hole_node_key: str) -> bool:
-        return hole_node_key in self.get_enabled_hole_sizes(well_id)
-
-    # ----------------------------------------------------------------------------------
-    # Widget factories (defensive imports)
-    # ----------------------------------------------------------------------------------
-    def _try_create_well_overview_page(self) -> QWidget:
-        try:
-            from app.ui.well_overview_page import WellOverviewPage  # type: ignore
             return WellOverviewPage()
-        except Exception:
-            return _SimpleMessagePage("Please select a subsection...")
 
-    def _try_create_disable_section_page(self, hole_node_key: str) -> QWidget:
-        try:
-            from app.ui.disable_section_page import DisableSectionPage  # type: ignore
-            return DisableSectionPage(hole_node_key=hole_node_key)
-        except Exception:
-            return _SimpleMessagePage("This section is disabled.")
-
-    def _try_create_hole_section_form(self, well_id: str, hole_node_key: str) -> QWidget:
-        try:
-            from app.ui.hole_section_form import HoleSectionForm  # type: ignore
-            return HoleSectionForm(well_id=well_id, hole_node_key=hole_node_key)
-        except Exception:
-            return _SimpleMessagePage("HoleSectionForm could not be loaded.")
-
-    def _try_create_step1_identity(self, well_id: str) -> QWidget:
-        try:
-            from app.ui.wizard.step1_well_identity import Step1WellIdentity  # type: ignore
+        if node_key == "WELL_IDENTITY":
             try:
-                return Step1WellIdentity(well_id=well_id)
-            except TypeError:
-                return Step1WellIdentity(well_id)
-        except Exception:
-            return _SimpleMessagePage("Step1WellIdentity could not be loaded.")
+                from app.ui.wizard.step1_well_identity import Step1WellIdentity  # type: ignore
+            except Exception:
+                return _SimpleMessagePage("Well Identity page could not be loaded.")
 
-    def _try_create_step2_trajectory(self, well_id: str) -> QWidget:
-        try:
-            from app.ui.wizard.step2_trajectory import Step2Trajectory  # type: ignore
+            w = Step1WellIdentity(well_id=well_id)
+            w.step1_saved.connect(self._on_step1_saved)
+            return w
+
+        if node_key == "TRAJECTORY":
             try:
-                return Step2Trajectory(well_id=well_id)
-            except TypeError:
-                return Step2Trajectory(well_id)
-        except Exception:
-            return _SimpleMessagePage("Step2Trajectory could not be loaded.")
+                from app.ui.wizard.step2_trajectory import Step2Trajectory  # type: ignore
+            except Exception:
+                return _SimpleMessagePage("Trajectory page could not be loaded.")
 
-    def _try_create_step3_hole_program(self, well_id: str) -> QWidget:
-        try:
-            from app.ui.wizard.step3_hole_program import Step3HoleProgram  # type: ignore
+            return Step2Trajectory(well_id=well_id)
 
-            enabled_now = self.get_enabled_hole_sizes(well_id)
+        if node_key == "HOLE_SECTION":
             try:
-                step3 = Step3HoleProgram(well_id=well_id, enabled_node_keys=enabled_now)
-            except TypeError:
-                try:
-                    step3 = Step3HoleProgram(well_id=well_id)
-                except TypeError:
-                    step3 = Step3HoleProgram(well_id)
+                from app.ui.wizard.step3_hole_program import Step3HoleProgram  # type: ignore
+            except Exception:
+                return _SimpleMessagePage("Hole Section setup page could not be loaded.")
 
-            if hasattr(step3, "enabled_node_keys_changed"):
-                step3.enabled_node_keys_changed.connect(self._on_step3_enabled_changed)  # type: ignore[attr-defined]
-            return step3
-        except Exception:
-            return _SimpleMessagePage("Step3HoleProgram could not be loaded.")
+            enabled = self._enabled_hole_sizes.get(well_id, set())
+            w = Step3HoleProgram(well_id=well_id, enabled_node_keys=enabled)
+            w.enabled_node_keys_changed.connect(self._on_enabled_hole_sizes_changed)
+            return w
 
-    def _on_step3_enabled_changed(self, well_id, enabled_node_keys) -> None:
-        wid = str(well_id)
+        if node_key.startswith("HSE_"):
+            try:
+                from app.ui.hole_section_form import HoleSectionForm  # type: ignore
+            except Exception:
+                return _SimpleMessagePage("Hole Section form could not be loaded.")
+
+            return HoleSectionForm(well_id=well_id, hole_node_key=node_key)
+
+        return _SimpleMessagePage(f"Route not implemented for: {node_key}")
+
+    def _on_step1_saved(self, well_id: str) -> None:
+        self.reload_wells()
+        self.well_tree.select_well_root(str(well_id))
+
+    def _is_hole_section_enabled(self, well_id: str, node_key: str) -> bool:
+        enabled = self._enabled_hole_sizes.get(str(well_id).strip(), set())
+        return node_key in enabled
+
+    def _on_enabled_hole_sizes_changed(self, well_id: str, enabled_set: Set[str]) -> None:
+        wid = str(well_id).strip()
+        if not wid:
+            return
+
+        self._enabled_hole_sizes[wid] = set(enabled_set or set())
+        self.well_tree.set_enabled_hole_sizes(wid, self._enabled_hole_sizes[wid])
+
+        # Drop cached widgets for disabled hole sections to avoid stale access.
+        for key in list(self._widget_cache.keys()):
+            if key[0] == wid and key[1].startswith("HSE_") and key[1] not in enabled_set:
+                del self._widget_cache[key]
+
+    def _on_well_delete_requested(self, well_id: str, well_name: str) -> None:
+        wid = str(well_id).strip()
+        if not wid:
+            return
+
+        name = (well_name or "").strip() or "this well"
+        msg = (
+            f"Are you sure you want to delete '{name}'?\n\n"
+            "This will permanently remove the well and all related data."
+        )
+        res = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            msg,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if res != QMessageBox.Yes:
+            return
+
         try:
-            enabled_set = set(enabled_node_keys)
+            _repo_delete_well()(wid)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to delete well.\n\nDetails:\n{e!r}")
+            return
+
+        self._enabled_hole_sizes.pop(wid, None)
+        for key in list(self._widget_cache.keys()):
+            if key[0] == wid:
+                del self._widget_cache[key]
+
+        self.reload_wells()
+
+    def closeEvent(self, event) -> None:
+        try:
+            current_well_id = self.well_tree.current_well_id()
+            if current_well_id:
+                self._settings.setValue("last_well_id", current_well_id)
         except Exception:
-            enabled_set = set()
-
-        enabled_set = {k for k in enabled_set if k in self._HOLE_NODE_KEYS}
-        self.set_enabled_hole_sizes(wid, enabled_set)
-
-# ---------------------------------------------------------------------
-# Compatibility: app.main expects MainWindow symbol
-# ---------------------------------------------------------------------
-MainWindow = MainWindows
+            pass
+        super().closeEvent(event)

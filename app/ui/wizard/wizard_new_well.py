@@ -51,8 +51,8 @@ class WizardNewWell(QWidget):
         self.layout = QVBoxLayout(self)
 
         # Steps
-        self.step1 = Step1WellIdentity()
-        self.step2 = Step2Trajectory()
+        self.step1 = Step1WellIdentity(well_id=self.well_id)
+        self.step2 = Step2Trajectory(well_id=self.well_id)
         # IMPORTANT FIX: Step3 must know the well context (well_id is TEXT/UUID)
         self.step3 = Step3HoleProgram(well_id=self.well_id, enabled_node_keys=set())
 

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import re
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget,
     QFormLayout,
+    QHBoxLayout,
     QLineEdit,
     QLabel,
     QPushButton,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core import rules
+from app.data import trajectory_repo
 
 
 class Step2Trajectory(QWidget):
@@ -43,8 +45,11 @@ class Step2Trajectory(QWidget):
 
     _NUMERIC_ALLOWED = re.compile(r"[^0-9.\-]+")
 
-    def __init__(self) -> None:
-        super().__init__()
+    step2_saved = Signal(str)  # well_id
+
+    def __init__(self, well_id: str | None = None, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._well_id: str = str(well_id).strip() if well_id is not None else ""
 
         root = QVBoxLayout()
         self.setLayout(root)
@@ -127,7 +132,15 @@ class Step2Trajectory(QWidget):
 
         self.btn_validate = QPushButton("Validate Step 2")
         self.btn_validate.clicked.connect(self._on_validate_clicked)
-        root.addWidget(self.btn_validate)
+
+        self.btn_save = QPushButton("Save")
+        self.btn_save.clicked.connect(self._on_save_clicked)
+
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(self.btn_validate)
+        btn_row.addWidget(self.btn_save)
+        btn_row.addStretch(1)
+        root.addLayout(btn_row)
 
         # Wire numeric normalization
         numeric_fields = [
@@ -166,12 +179,35 @@ class Step2Trajectory(QWidget):
             le.blockSignals(False)
 
     def _on_validate_clicked(self) -> None:
+        self._validate_step2(show_success=True)
+
+    def _on_save_clicked(self) -> None:
+        result = self._validate_step2(show_success=False)
+        if not result.ok:
+            return
+
+        if not self._well_id:
+            QMessageBox.warning(self, "Warning", "Well context is not set. Save was not applied.")
+            return
+
+        data = self.collect_data()
+        try:
+            trajectory_repo.save_trajectory(self._well_id, data)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save Step 2.\n\nDetails:\n{e!r}")
+            return
+
+        self.step2_saved.emit(self._well_id)
+        QMessageBox.information(self, "Information", "Step 2 saved.")
+
+    def _validate_step2(self, *, show_success: bool) -> rules.ValidationResult:
         data = self.collect_data()
         result = rules.validate_step2(data)
 
         if result.ok:
-            QMessageBox.information(self, "Validation", "Step 2 is valid.")
-            return
+            if show_success:
+                QMessageBox.information(self, "Validation", "Step 2 is valid.")
+            return result
 
         lines = []
         for _field, msg in result.field_errors.items():
@@ -184,6 +220,10 @@ class Step2Trajectory(QWidget):
             "Validation Error",
             "Please fix the following issues:\n\n" + "\n".join(lines),
         )
+        return result
+
+    def set_well_id(self, well_id: str) -> None:
+        self._well_id = str(well_id or "").strip()
 
     def collect_data(self) -> dict:
         return {

@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QRegularExpressionValidator, QRegularExpression
+from PySide6.QtCore import Qt, Signal, QRegularExpression
+from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import QLineEdit
 
 from app.core.hole_section_calcs import normalize_hhmm

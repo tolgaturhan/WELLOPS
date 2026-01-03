@@ -1,9 +1,10 @@
 from __future__ import annotations 
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget,
     QFormLayout,
+    QHBoxLayout,
     QLineEdit,
     QComboBox,
     QTextEdit,
@@ -12,6 +13,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
+from app.data import sections_repo, wells_repo
+from app.data.db import get_connection
 from app.core import rules
 from app.core.canonical import canonical_well_name, canonical_text, derive_field_name_from_well_key
 
@@ -31,8 +34,11 @@ class Step1WellIdentity(QWidget):
     - Notes (optional)
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    step1_saved = Signal(str)  # well_id
+
+    def __init__(self, well_id: str | None = None, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._well_id: str = str(well_id).strip() if well_id is not None else ""
 
         self.form = QFormLayout()
         self.setLayout(self.form)
@@ -199,7 +205,18 @@ class Step1WellIdentity(QWidget):
 
         self.btn_validate = QPushButton("Validate Step 1")
         self.btn_validate.clicked.connect(self._on_validate_clicked)
-        self.form.addRow("", self.btn_validate)
+
+        self.btn_save = QPushButton("Save")
+        self.btn_save.clicked.connect(self._on_save_clicked)
+
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(8)
+        btn_layout.addWidget(self.btn_validate)
+        btn_layout.addWidget(self.btn_save)
+        btn_layout.addStretch(1)
+        self.form.addRow("", btn_row)
 
         # Wire events
         self.well_name.textChanged.connect(self._on_well_name_changed)
@@ -247,12 +264,60 @@ class Step1WellIdentity(QWidget):
         self._normalize_combo_text(self.rig_name, canonical_text)
 
     def _on_validate_clicked(self) -> None:
+        self._validate_step1(show_success=True)
+
+    def _on_save_clicked(self) -> None:
+        result = self._validate_step1(show_success=False)
+        if not result.ok:
+            return
+
+        if not self._well_id:
+            QMessageBox.warning(self, "Warning", "Well context is not set. Save was not applied.")
+            return
+
+        data = self.collect_data()
+        now = wells_repo.iso_now()
+        new_name = (data.get("well_name") or "").strip()
+        if not new_name:
+            QMessageBox.warning(self, "Warning", "Well Name cannot be empty.")
+            return
+
+        try:
+            with get_connection() as conn:
+                conn.execute(
+                    """
+                    UPDATE wells
+                    SET well_name = ?, step1_done = 1, updated_at = ?
+                    WHERE well_id = ?
+                    """,
+                    (new_name, now, self._well_id),
+                )
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save Step 1.\n\nDetails:\n{e!r}")
+            return
+
+        try:
+            sections_repo.ensure_section_tree(self._well_id, data)
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                "Failed to build section tree after Step 1 save.\n\n"
+                f"Details:\n{e!r}",
+            )
+            return
+
+        self.step1_saved.emit(self._well_id)
+        QMessageBox.information(self, "Information", "Step 1 saved.")
+
+    def _validate_step1(self, *, show_success: bool) -> rules.ValidationResult:
         data = self.collect_data()
         result = rules.validate_step1(data)
 
         if result.ok:
-            QMessageBox.information(self, "Validation", "Step 1 is valid.")
-            return
+            if show_success:
+                QMessageBox.information(self, "Validation", "Step 1 is valid.")
+            return result
 
         lines = []
         for _field, msg in result.field_errors.items():
@@ -265,6 +330,10 @@ class Step1WellIdentity(QWidget):
             "Validation Error",
             "Please fix the following issues:\n\n" + "\n".join(lines),
         )
+        return result
+
+    def set_well_id(self, well_id: str) -> None:
+        self._well_id = str(well_id or "").strip()
 
     def collect_data(self) -> dict:
         # Note: UUID will be generated later in DB layer.

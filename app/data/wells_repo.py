@@ -132,3 +132,26 @@ def get_well(well_id: str) -> Optional[Dict[str, Any]]:
         "created_at": str(r["created_at"]),
         "updated_at": str(r["updated_at"]),
     }
+
+
+def delete_well(well_id: str) -> None:
+    """
+    Permanently deletes a well and all related section nodes.
+    """
+    wid = (well_id or "").strip()
+    if not wid:
+        raise ValueError("well_id is required")
+
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM well_section_nodes WHERE well_id = ?",
+            (wid,),
+        )
+        conn.execute(
+            "DELETE FROM well_trajectory WHERE well_id = ?",
+            (wid,),
+        )
+        conn.execute(
+            "DELETE FROM wells WHERE well_id = ?",
+            (wid,),
+        )

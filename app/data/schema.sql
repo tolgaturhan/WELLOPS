@@ -27,6 +27,35 @@ CREATE TABLE IF NOT EXISTS wells (
 CREATE INDEX IF NOT EXISTS idx_wells_status ON wells(status);
 CREATE INDEX IF NOT EXISTS idx_wells_name ON wells(well_name);
 
+-- ----------------------------
+-- Well Trajectory (Step 2)
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS well_trajectory (
+  well_id TEXT PRIMARY KEY,
+
+  kop_m REAL NOT NULL,
+  tvd_planned_m REAL NOT NULL,
+  md_planned_m REAL NOT NULL,
+  max_inc_planned_deg REAL NOT NULL,
+  azimuth_planned_deg REAL NOT NULL,
+  max_dls_planned_deg_per_30m REAL NOT NULL,
+  vs_planned_m REAL NOT NULL,
+  dist_planned_m REAL NOT NULL,
+
+  tvd_at_td_m REAL NULL,
+  md_at_td_m REAL NULL,
+  inc_at_td_deg REAL NULL,
+  azimuth_at_td_deg REAL NULL,
+  max_dls_actual_deg_per_30m REAL NULL,
+  vs_at_td_m REAL NULL,
+  dist_at_td_m REAL NULL,
+
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+
+  FOREIGN KEY (well_id) REFERENCES wells(well_id)
+);
+
 
 -- ----------------------------
 -- WellOps Sections Tree
