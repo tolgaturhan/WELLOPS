@@ -1,0 +1,60 @@
+{
+  "template_key": "default_generic",
+  "name": "Default Generic Template",
+  "version": 1,
+  "domain": "wellops",
+  "root": {
+    "node_key": "wellops.root",
+    "title": "WellOps",
+    "node_type": "GROUP",
+    "order": 0,
+    "children": [
+      {
+        "node_key": "wellops.header",
+        "title": "Overview",
+        "node_type": "GROUP",
+        "order": 10,
+        "children": [
+          {
+            "node_key": "wellops.well_identity",
+            "title": "Well Identity",
+            "node_type": "SECTION",
+            "order": 10,
+            "enabled": true,
+            "selected": true,
+            "default_state": { "focus": true }
+          }
+        ]
+      },
+      {
+        "node_key": "wellops.planning",
+        "title": "Planning",
+        "node_type": "GROUP",
+        "order": 20,
+        "children": [
+          {
+            "node_key": "wellops.drilling_program",
+            "title": "Drilling Program",
+            "node_type": "SECTION",
+            "order": 10,
+            "enabled": true,
+            "selected": false
+          },
+          {
+            "node_key": "wellops.hse",
+            "title": "HSE",
+            "node_type": "SECTION",
+            "order": 20,
+            "enabled": true,
+            "selected": false
+          }
+        ]
+      }
+    ]
+  },
+  "rules": [],
+  "meta": {
+    "created_by": "system",
+    "notes": "Template contract v1"
+  }
+}

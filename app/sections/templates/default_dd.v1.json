@@ -1,0 +1,88 @@
+{
+  "template_key": "default_dd",
+  "name": "Default DD Template",
+  "version": 1,
+  "domain": "wellops",
+  "root": {
+    "node_key": "wellops.root",
+    "title": "WellOps",
+    "node_type": "GROUP",
+    "order": 0,
+    "children": [
+      {
+        "node_key": "wellops.header",
+        "title": "Overview",
+        "node_type": "GROUP",
+        "order": 10,
+        "children": [
+          {
+            "node_key": "wellops.well_identity",
+            "title": "Well Identity",
+            "node_type": "SECTION",
+            "order": 10,
+            "enabled": true,
+            "selected": true,
+            "default_state": { "focus": true }
+          }
+        ]
+      },
+      {
+        "node_key": "wellops.planning",
+        "title": "Planning",
+        "node_type": "GROUP",
+        "order": 20,
+        "children": [
+          {
+            "node_key": "wellops.drilling_program",
+            "title": "Drilling Program",
+            "node_type": "SECTION",
+            "order": 10,
+            "enabled": true,
+            "selected": true,
+            "children": [
+              {
+                "node_key": "wellops.drilling_program.hole_sizes",
+                "title": "Hole Sizes",
+                "node_type": "ITEM",
+                "order": 10,
+                "enabled": true,
+                "default_state": {
+                  "mode": "single_select",
+                  "selected_key": "hole_12_25in",
+                  "options": [
+                    { "key": "hole_26in", "label": "26\"", "inch": 26.0, "mm": 660.4 },
+                    { "key": "hole_17_5in", "label": "17 1/2\"", "inch": 17.5, "mm": 444.5 },
+                    { "key": "hole_12_25in", "label": "12 1/4\"", "inch": 12.25, "mm": 311.15 },
+                    { "key": "hole_8_5in", "label": "8 1/2\"", "inch": 8.5, "mm": 215.9 },
+                    { "key": "hole_6in", "label": "6\"", "inch": 6.0, "mm": 152.4 }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "node_key": "wellops.hse",
+            "title": "HSE",
+            "node_type": "SECTION",
+            "order": 20,
+            "enabled": true,
+            "selected": false
+          }
+        ]
+      }
+    ]
+  },
+  "rules": [
+    {
+      "when": { "field": "well_type", "op": "equals", "value": "DD" },
+      "then": [
+        { "action": "enable", "target": "wellops.drilling_program" },
+        { "action": "select", "target": "wellops.drilling_program" }
+      ]
+    }
+  ],
+  "meta": {
+    "created_by": "system",
+    "notes": "Template contract v1"
+  }
+}
