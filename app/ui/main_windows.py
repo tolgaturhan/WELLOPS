@@ -54,6 +54,30 @@ def _repo_delete_well():
         ) from e
 
 
+def _repo_get_enabled_hole_sizes():
+    """Lazy import for hole sections repository (keeps UI import-safe)."""
+    try:
+        from app.data.hole_sections_repo import get_enabled_hole_sizes  # type: ignore
+        return get_enabled_hole_sizes
+    except Exception as e:  # pragma: no cover
+        raise ImportError(
+            "Repository module not available: app.data.hole_sections_repo.get_enabled_hole_sizes. "
+            "Check project wiring."
+        ) from e
+
+
+def _repo_save_enabled_hole_sizes():
+    """Lazy import for hole sections repository (keeps UI import-safe)."""
+    try:
+        from app.data.hole_sections_repo import save_enabled_hole_sizes  # type: ignore
+        return save_enabled_hole_sizes
+    except Exception as e:  # pragma: no cover
+        raise ImportError(
+            "Repository module not available: app.data.hole_sections_repo.save_enabled_hole_sizes. "
+            "Check project wiring."
+        ) from e
+
+
 class _SimpleMessagePage(QWidget):
     def __init__(self, message: str):
         super().__init__()
@@ -167,12 +191,25 @@ class MainWindow(QMainWindow):
           - status: str
         """
         self.well_tree.set_wells(wells)
+        self._load_enabled_hole_sizes(wells)
         for w in wells:
             wid = str(w.get("id", "")).strip()
             if not wid:
                 continue
             enabled = self._enabled_hole_sizes.get(wid, set())
             self.well_tree.set_enabled_hole_sizes(wid, enabled)
+
+    def _load_enabled_hole_sizes(self, wells: list[dict]) -> None:
+        self._enabled_hole_sizes.clear()
+        for w in wells:
+            wid = str(w.get("id", "")).strip()
+            if not wid:
+                continue
+            try:
+                enabled = set(_repo_get_enabled_hole_sizes()(wid))
+            except Exception:
+                enabled = set()
+            self._enabled_hole_sizes[wid] = enabled
 
     def _apply_last_well_expand(self) -> None:
         last_well_id = str(self._settings.value("last_well_id", "") or "")
@@ -342,8 +379,19 @@ class MainWindow(QMainWindow):
         if not wid:
             return
 
-        self._enabled_hole_sizes[wid] = set(enabled_set or set())
+        enabled = set(enabled_set or set())
+        self._enabled_hole_sizes[wid] = enabled
+        try:
+            _repo_save_enabled_hole_sizes()(wid, enabled)
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to save hole section settings.\n\nDetails:\n{e!r}",
+            )
+            return
         self.well_tree.set_enabled_hole_sizes(wid, self._enabled_hole_sizes[wid])
+        QMessageBox.information(self, "Information", "Saved.")
 
         # Drop cached widgets for disabled hole sections to avoid stale access.
         for key in list(self._widget_cache.keys()):

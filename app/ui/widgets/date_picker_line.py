@@ -95,7 +95,7 @@ class DatePickerLine(QWidget):
         self.edit.setFocusPolicy(Qt.StrongFocus)
 
         self.btn = QToolButton()
-        self.btn.setText("…")
+        self.btn.setText("...")
         self.btn.setCursor(Qt.PointingHandCursor)
         self.btn.setToolTip("Select date")
 

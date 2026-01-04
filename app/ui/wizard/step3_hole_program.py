@@ -37,11 +37,11 @@ class Step3HoleProgram(QWidget):
 
     # Node keys MUST match WellTreeWidget/MainWindow
     _HOLE_ITEMS: Tuple[Tuple[str, str], ...] = (
-        ("HSE_26", '26” HSE'),
-        ("HSE_17_1_2", '17 1/2” HSE'),
-        ("HSE_12_1_4", '12 1/4” HSE'),
-        ("HSE_8_1_2", '8 1/2” HSE'),
-        ("HSE_6", '6” HSE'),
+        ("HSE_26", '26" HSE'),
+        ("HSE_17_1_2", '17 1/2" HSE'),
+        ("HSE_12_1_4", '12 1/4" HSE'),
+        ("HSE_8_1_2", '8 1/2" HSE'),
+        ("HSE_6", '6" HSE'),
     )
 
     def __init__(
@@ -68,7 +68,7 @@ class Step3HoleProgram(QWidget):
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(12)
 
-        title = QLabel("HOLE SECTION — Enable / Disable Sections (UI-only)")
+        title = QLabel("HOLE SECTION - Enable / Disable Sections")
         title_font = title.font()
         title_font.setBold(True)
         title_font.setPointSize(title_font.pointSize() + 1)
@@ -158,7 +158,7 @@ class Step3HoleProgram(QWidget):
 
         self._update_apply_enabled_state()
 
-        QMessageBox.information(self, "Information", "Saved (not yet wired to DB).")
+        # Saving is handled by the container via enabled_node_keys_changed.
 
     def _on_reset_clicked(self) -> None:
         # Reset UI back to last applied snapshot

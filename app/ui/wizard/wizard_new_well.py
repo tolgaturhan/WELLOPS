@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
-from app.data import sections_repo
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
@@ -15,8 +13,6 @@ from PySide6.QtWidgets import (
 )
 
 from app.data.db import get_connection
-from app.data import sections_repo
-from app.core import rules
 from app.ui.wizard.step1_well_identity import Step1WellIdentity
 from app.ui.wizard.step2_trajectory import Step2Trajectory
 from app.ui.wizard.step3_hole_program import Step3HoleProgram
@@ -54,7 +50,14 @@ class WizardNewWell(QWidget):
         self.step1 = Step1WellIdentity(well_id=self.well_id)
         self.step2 = Step2Trajectory(well_id=self.well_id)
         # IMPORTANT FIX: Step3 must know the well context (well_id is TEXT/UUID)
-        self.step3 = Step3HoleProgram(well_id=self.well_id, enabled_node_keys=set())
+        enabled = set()
+        try:
+            from app.data.hole_sections_repo import get_enabled_hole_sizes  # type: ignore
+            enabled = set(get_enabled_hole_sizes(self.well_id))
+        except Exception:
+            enabled = set()
+        self.step3 = Step3HoleProgram(well_id=self.well_id, enabled_node_keys=enabled)
+        self.step3.enabled_node_keys_changed.connect(self._on_hole_sections_changed)
 
         # Buttons
         btn_row = QHBoxLayout()
@@ -98,43 +101,7 @@ class WizardNewWell(QWidget):
             QMessageBox.critical(self, "Error", f"Unexpected error:\n\n{e}")
 
     def _handle_step1_next(self) -> None:
-        # 1) Collect data from Step1
-        step1_data = self._collect_step1_data()
-
-        # 2) Hard validation via locked rules
-        result = rules.validate_step1(step1_data)
-        if not result.ok:
-            # Show a compact error message
-            msg = "Please fix Step 1 errors:\n\n" + "\n".join(result.errors)
-            QMessageBox.warning(self, "Validation Error", msg)
-            return
-
-        now = iso_now()
-
-        # 3) Update wells table with well_name (if edited in Step1)
-        new_name = self._extract_well_name(step1_data) or self.initial_well_name
-
-        with self.conn:
-            self.conn.execute(
-                """
-                UPDATE wells
-                SET well_name = ?, step1_done = 1, updated_at = ?
-                WHERE well_id = ?
-                """,
-                (new_name, now, self.well_id),
-            )
-
-        # Materialize (or refresh) the per-well section tree after Step 1 is saved.
-        # This uses Step1 context (e.g., well_type) to choose the correct template.
-        try:
-            sections_repo.ensure_section_tree(self.well_id, step1_data)
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                "Failed to build section tree after Step 1 save.\n\n"
-                f"Details:\n{e}",
-            )
+        if not self.step1.save_to_db(show_message=False, emit_signal=False):
             return
 
         # Move to Step2
@@ -143,25 +110,8 @@ class WizardNewWell(QWidget):
         self.btn_next.setText("Next")
 
     def _handle_step2_next(self) -> None:
-        step2_data = self._collect_step2_data()
-
-        result = rules.validate_step2(step2_data)
-        if not result.ok:
-            msg = "Please fix Step 2 errors:\n\n" + "\n".join(result.errors)
-            QMessageBox.warning(self, "Validation Error", msg)
+        if not self.step2.save_to_db(show_message=False, emit_signal=False):
             return
-
-        now = iso_now()
-
-        with self.conn:
-            self.conn.execute(
-                """
-                UPDATE wells
-                SET step2_done = 1, updated_at = ?
-                WHERE well_id = ?
-                """,
-                (now, self.well_id),
-            )
 
         # Move to Step3
         self._swap_step_widget(self.step2, self.step3)
@@ -200,82 +150,14 @@ class WizardNewWell(QWidget):
         from_widget.setParent(None)
         self.layout.insertWidget(0, to_widget)
 
-    def _collect_step1_data(self) -> Dict[str, Any]:
-        """
-        Collect Step1 form data using best-effort attribute access.
-        """
-        data: Dict[str, Any] = {}
-
-        def _get_text(widget_names):
-            for name in widget_names:
-                w = getattr(self.step1, name, None)
-                if w is None:
-                    continue
-                if hasattr(w, "text"):
-                    try:
-                        return w.text().strip()
-                    except Exception:
-                        pass
-                if hasattr(w, "toPlainText"):
-                    try:
-                        return w.toPlainText().strip()
-                    except Exception:
-                        pass
-            return ""
-
-        def _get_combo(widget_names):
-            for name in widget_names:
-                w = getattr(self.step1, name, None)
-                if w is None:
-                    continue
-                if hasattr(w, "currentText"):
-                    try:
-                        return w.currentText().strip()
-                    except Exception:
-                        pass
-            return ""
-
-        data["well_name"] = _get_text(
-            ("edt_well_name", "edit_well_name", "well_name_input", "txt_well_name", "le_well_name")
-        )
-        data["well_type"] = _get_combo(("cmb_well_type", "combo_well_type", "cb_well_type"))
-        data["province"] = _get_combo(("cmb_province", "combo_province", "cb_province"))
-        data["rig_name"] = _get_combo(("cmb_rig_name", "combo_rig_name", "cb_rig_name"))
-        data["operator"] = _get_combo(("cmb_operator", "combo_operator", "cb_operator"))
-        data["field_name"] = _get_text(("edt_field_name", "edit_field_name", "le_field_name"))
-        data["well_key"] = _get_text(("edt_well_key", "edit_well_key", "le_well_key"))
-
-        raw = getattr(self.step1, "get_payload", None)
-        if callable(raw):
-            try:
-                extra = raw()
-                if isinstance(extra, dict):
-                    data.update(extra)
-            except Exception:
-                pass
-
-        return data
-
-    def _collect_step2_data(self) -> Dict[str, Any]:
-        data: Dict[str, Any] = {}
-
-        raw = getattr(self.step2, "get_payload", None)
-        if callable(raw):
-            try:
-                extra = raw()
-                if isinstance(extra, dict):
-                    data.update(extra)
-            except Exception:
-                pass
-
-        return data
-
-    def _extract_well_name(self, step1_data: Dict[str, Any]) -> Optional[str]:
-        for key in ("well_name", "WELL_NAME", "name"):
-            v = step1_data.get(key)
-            if isinstance(v, str) and v.strip():
-                return v.strip()
-        return None
+    def _on_hole_sections_changed(self, well_id: str, enabled_set: set[str]) -> None:
+        try:
+            from app.data.hole_sections_repo import save_enabled_hole_sizes  # type: ignore
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save hole sections.\n\nDetails:\n{e!r}")
+            return
+        save_enabled_hole_sizes(well_id, enabled_set)
+        QMessageBox.information(self, "Information", "Saved.")
 
     def _try_prefill_step1_well_name(self, name: str) -> None:
         """
@@ -283,6 +165,12 @@ class WizardNewWell(QWidget):
         """
         if not name:
             return
+        try:
+            if getattr(self.step1, "well_name", None) is not None:
+                if self.step1.well_name.text().strip():
+                    return
+        except Exception:
+            pass
 
         # 1) Common method names
         for fn_name in ("set_well_name", "setWellName", "prefill_well_name", "prefillWellName"):

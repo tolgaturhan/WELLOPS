@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-from app.data import sections_repo, wells_repo
+from app.data import identity_repo, sections_repo, wells_repo
 from app.data.db import get_connection
 from app.core import rules
 from app.core.canonical import canonical_well_name, canonical_text, derive_field_name_from_well_key
@@ -225,6 +225,8 @@ class Step1WellIdentity(QWidget):
         self.province.lineEdit().textEdited.connect(self._on_province_edited)
         self.rig_name.lineEdit().textEdited.connect(self._on_rig_edited)
 
+        self._load_from_db()
+
     def _on_well_name_changed(self, _text: str) -> None:
         # Normalize live
         canon = canonical_well_name(self.well_name.text())
@@ -267,48 +269,7 @@ class Step1WellIdentity(QWidget):
         self._validate_step1(show_success=True)
 
     def _on_save_clicked(self) -> None:
-        result = self._validate_step1(show_success=False)
-        if not result.ok:
-            return
-
-        if not self._well_id:
-            QMessageBox.warning(self, "Warning", "Well context is not set. Save was not applied.")
-            return
-
-        data = self.collect_data()
-        now = wells_repo.iso_now()
-        new_name = (data.get("well_name") or "").strip()
-        if not new_name:
-            QMessageBox.warning(self, "Warning", "Well Name cannot be empty.")
-            return
-
-        try:
-            with get_connection() as conn:
-                conn.execute(
-                    """
-                    UPDATE wells
-                    SET well_name = ?, step1_done = 1, updated_at = ?
-                    WHERE well_id = ?
-                    """,
-                    (new_name, now, self._well_id),
-                )
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save Step 1.\n\nDetails:\n{e!r}")
-            return
-
-        try:
-            sections_repo.ensure_section_tree(self._well_id, data)
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                "Failed to build section tree after Step 1 save.\n\n"
-                f"Details:\n{e!r}",
-            )
-            return
-
-        self.step1_saved.emit(self._well_id)
-        QMessageBox.information(self, "Information", "Step 1 saved.")
+        self.save_to_db(show_message=True, emit_signal=True)
 
     def _validate_step1(self, *, show_success: bool) -> rules.ValidationResult:
         data = self.collect_data()
@@ -332,8 +293,92 @@ class Step1WellIdentity(QWidget):
         )
         return result
 
+    def save_to_db(self, *, show_message: bool, emit_signal: bool) -> bool:
+        result = self._validate_step1(show_success=show_message)
+        if not result.ok:
+            return False
+
+        if not self._well_id:
+            QMessageBox.warning(self, "Warning", "Well context is not set. Save was not applied.")
+            return False
+
+        data = self.collect_data()
+        now = wells_repo.iso_now()
+        new_name = (data.get("well_name") or "").strip()
+        if not new_name:
+            QMessageBox.warning(self, "Warning", "Well Name cannot be empty.")
+            return False
+
+        try:
+            identity_repo.save_identity(self._well_id, data)
+            with get_connection() as conn:
+                conn.execute(
+                    """
+                    UPDATE wells
+                    SET well_name = ?, step1_done = 1, updated_at = ?
+                    WHERE well_id = ?
+                    """,
+                    (new_name, now, self._well_id),
+                )
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save Step 1.\n\nDetails:\n{e!r}")
+            return False
+
+        try:
+            sections_repo.ensure_section_tree(self._well_id, data)
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                "Failed to build section tree after Step 1 save.\n\n"
+                f"Details:\n{e!r}",
+            )
+            return False
+
+        if emit_signal:
+            self.step1_saved.emit(self._well_id)
+        if show_message:
+            QMessageBox.information(self, "Information", "Step 1 saved.")
+        return True
+
     def set_well_id(self, well_id: str) -> None:
         self._well_id = str(well_id or "").strip()
+
+    def _set_combo_value(self, combo: QComboBox, value: str) -> None:
+        if not value:
+            return
+        idx = combo.findText(value)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+            return
+        if combo.isEditable():
+            combo.setEditText(value)
+
+    def _load_from_db(self) -> None:
+        if not self._well_id:
+            return
+        row = identity_repo.get_identity(self._well_id)
+        if not row:
+            return
+
+        self.well_name.blockSignals(True)
+        self.well_name.setText(str(row.get("well_name") or ""))
+        self.well_name.blockSignals(False)
+
+        self.well_key.setText(str(row.get("well_key") or ""))
+        self.field_name.setText(str(row.get("field_name") or ""))
+
+        self._set_combo_value(self.operator, str(row.get("operator") or ""))
+        self._set_combo_value(self.contractor, str(row.get("contractor") or ""))
+        self._set_combo_value(self.well_purpose, str(row.get("well_purpose") or ""))
+        self._set_combo_value(self.well_type, str(row.get("well_type") or ""))
+        self._set_combo_value(self.dd_well_type, str(row.get("dd_well_type") or ""))
+        self._set_combo_value(self.province, str(row.get("province") or ""))
+        self._set_combo_value(self.rig_name, str(row.get("rig_name") or ""))
+
+        self.notes.blockSignals(True)
+        self.notes.setPlainText(str(row.get("notes") or ""))
+        self.notes.blockSignals(False)
 
     def collect_data(self) -> dict:
         # Note: UUID will be generated later in DB layer.

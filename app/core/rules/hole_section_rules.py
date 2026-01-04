@@ -102,6 +102,50 @@ BIT_KINDS: Tuple[str, ...] = (
     "TRICONE",
 )
 
+CASING_OD_OPTIONS: Tuple[str, ...] = (
+    '7"',
+    '8.625"',
+    '9.625"',
+    '10.750"',
+    '11.750"',
+    '13.375"',
+    '16"',
+    '20"',
+)
+
+CASING_ID_BY_OD: Dict[str, Tuple[str, ...]] = {
+    '7"': ('6.184"', '6.276"', '6.366"'),
+    '8.625"': ('7.921"', '8.097"'),
+    '9.625"': ('8.755"', '8.835"', '8.921"'),
+    '10.750"': ('9.660"', '9.850"'),
+    '11.750"': ('10.772"', '10.920"'),
+    '13.375"': ('12.100"', '12.347"'),
+    '16"': ('14.868"', '15.124"'),
+    '20"': ('18.730"',),
+}
+
+CASING_ID_OPTIONS: Tuple[str, ...] = tuple(
+    sorted({item for items in CASING_ID_BY_OD.values() for item in items})
+)
+
+MUD_TYPE_OPTIONS: Tuple[str, ...] = (
+    "AIR",
+    "AERATED",
+    "BENTONITE",
+    "CaCl2 POLYMER",
+    "FOAM",
+    "GEL",
+    "HIGH-TEMPERATURE GEOTHERMAL",
+    "KCL-POLYMER",
+    "LIGNOSULFONATE",
+    "NaCl POLYMER",
+    "OIL BASE",
+    "PHPA",
+    "POLYMER",
+    "SPUD",
+    "SYNTHETIC BASE",
+)
+
 
 # ---------------------------------------------------------------------
 # Validation result
@@ -381,6 +425,33 @@ def validate_hole_section(section_data: Dict[str, Any]) -> HoleSectionValidation
     computed["personnel_night_dd"] = night_dd
     computed["personnel_day_mwd"] = day_mwd
     computed["personnel_night_mwd"] = night_mwd
+
+    # -------------------------------------------------
+    # INFO (casing OD/ID required)
+    # -------------------------------------------------
+    casing_od = _require_choice(
+        data.get("info_casing_od"),
+        CASING_OD_OPTIONS,
+        "INFO / CASING OD",
+        errors,
+    )
+    casing_id = _require_choice(
+        data.get("info_casing_id"),
+        CASING_ID_OPTIONS,
+        "INFO / CASING ID",
+        errors,
+    )
+    if casing_od and casing_id:
+        allowed_ids = CASING_ID_BY_OD.get(casing_od, ())
+        if casing_id not in allowed_ids:
+            errors.append("INFO / CASING ID is not valid for the selected CASING OD.")
+
+    computed["info_mud_type"] = _require_choice(
+        data.get("info_mud_type"),
+        MUD_TYPE_OPTIONS,
+        "INFO / MUD TYPE",
+        errors,
+    )
 
     # -------------------------------------------------
     # TIME ANALYSIS (required dates/times, numeric rules, derived fields)

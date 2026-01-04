@@ -31,4 +31,36 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     sql = SCHEMA_PATH.read_text(encoding="utf-8")
     # Runs all CREATE TABLE/INDEX statements
     conn.executescript(sql)
+    _ensure_wells_columns(conn)
+    _ensure_hole_section_columns(conn)
     conn.commit()
+
+
+def _ensure_wells_columns(conn: sqlite3.Connection) -> None:
+    """
+    Adds missing columns to wells for existing DBs.
+    """
+    rows = conn.execute("PRAGMA table_info(wells)").fetchall()
+    existing = {row[1] for row in rows}
+
+    if "step2_done" not in existing:
+        conn.execute("ALTER TABLE wells ADD COLUMN step2_done INTEGER NOT NULL DEFAULT 0")
+    if "step3_done" not in existing:
+        conn.execute("ALTER TABLE wells ADD COLUMN step3_done INTEGER NOT NULL DEFAULT 0")
+
+    if "section_template_key" not in existing:
+        conn.execute("ALTER TABLE wells ADD COLUMN section_template_key TEXT NULL")
+    if "sections_version" not in existing:
+        conn.execute("ALTER TABLE wells ADD COLUMN sections_version INTEGER NULL")
+
+
+def _ensure_hole_section_columns(conn: sqlite3.Connection) -> None:
+    rows = conn.execute("PRAGMA table_info(well_hole_section_data)").fetchall()
+    if not rows:
+        return
+    existing = {row[1] for row in rows}
+
+    if "info_casing_od" not in existing:
+        conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN info_casing_od TEXT NULL")
+    if "info_casing_id" not in existing:
+        conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN info_casing_id TEXT NULL")

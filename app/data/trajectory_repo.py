@@ -135,3 +135,33 @@ def save_trajectory(well_id: str, data: Dict[str, Any]) -> None:
                     now,
                 ),
             )
+
+        conn.execute(
+            """
+            UPDATE wells
+            SET step2_done = 1, updated_at = ?
+            WHERE well_id = ?
+            """,
+            (now, wid),
+        )
+
+
+def get_trajectory(well_id: str) -> Optional[Dict[str, Any]]:
+    wid = (well_id or "").strip()
+    if not wid:
+        return None
+
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM well_trajectory
+            WHERE well_id = ?
+            """,
+            (wid,),
+        ).fetchone()
+
+    if not row:
+        return None
+
+    return {k: row[k] for k in row.keys()}

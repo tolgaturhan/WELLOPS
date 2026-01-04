@@ -163,6 +163,8 @@ class Step2Trajectory(QWidget):
         for le in numeric_fields:
             le.textEdited.connect(lambda _t, _le=le: self._normalize_numeric(_le))
 
+        self._load_from_db()
+
     def _normalize_numeric(self, le: QLineEdit) -> None:
         s = le.text()
         if not s:
@@ -182,23 +184,7 @@ class Step2Trajectory(QWidget):
         self._validate_step2(show_success=True)
 
     def _on_save_clicked(self) -> None:
-        result = self._validate_step2(show_success=False)
-        if not result.ok:
-            return
-
-        if not self._well_id:
-            QMessageBox.warning(self, "Warning", "Well context is not set. Save was not applied.")
-            return
-
-        data = self.collect_data()
-        try:
-            trajectory_repo.save_trajectory(self._well_id, data)
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save Step 2.\n\nDetails:\n{e!r}")
-            return
-
-        self.step2_saved.emit(self._well_id)
-        QMessageBox.information(self, "Information", "Step 2 saved.")
+        self.save_to_db(show_message=True, emit_signal=True)
 
     def _validate_step2(self, *, show_success: bool) -> rules.ValidationResult:
         data = self.collect_data()
@@ -222,8 +208,62 @@ class Step2Trajectory(QWidget):
         )
         return result
 
+    def save_to_db(self, *, show_message: bool, emit_signal: bool) -> bool:
+        result = self._validate_step2(show_success=show_message)
+        if not result.ok:
+            return False
+
+        if not self._well_id:
+            QMessageBox.warning(self, "Warning", "Well context is not set. Save was not applied.")
+            return False
+
+        data = self.collect_data()
+        try:
+            trajectory_repo.save_trajectory(self._well_id, data)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save Step 2.\n\nDetails:\n{e!r}")
+            return False
+
+        if emit_signal:
+            self.step2_saved.emit(self._well_id)
+        if show_message:
+            QMessageBox.information(self, "Information", "Step 2 saved.")
+        return True
+
     def set_well_id(self, well_id: str) -> None:
         self._well_id = str(well_id or "").strip()
+
+    def _set_line_text(self, le: QLineEdit, value: object) -> None:
+        if value is None:
+            return
+        txt = str(value)
+        if txt == "":
+            return
+        le.setText(txt)
+
+    def _load_from_db(self) -> None:
+        if not self._well_id:
+            return
+        row = trajectory_repo.get_trajectory(self._well_id)
+        if not row:
+            return
+
+        self._set_line_text(self.kop_m, row.get("kop_m"))
+        self._set_line_text(self.tvd_planned_m, row.get("tvd_planned_m"))
+        self._set_line_text(self.md_planned_m, row.get("md_planned_m"))
+        self._set_line_text(self.max_inc_planned_deg, row.get("max_inc_planned_deg"))
+        self._set_line_text(self.azimuth_planned_deg, row.get("azimuth_planned_deg"))
+        self._set_line_text(self.max_dls_planned_deg_per_30m, row.get("max_dls_planned_deg_per_30m"))
+        self._set_line_text(self.vs_planned_m, row.get("vs_planned_m"))
+        self._set_line_text(self.dist_planned_m, row.get("dist_planned_m"))
+
+        self._set_line_text(self.tvd_at_td_m, row.get("tvd_at_td_m"))
+        self._set_line_text(self.md_at_td_m, row.get("md_at_td_m"))
+        self._set_line_text(self.inc_at_td_deg, row.get("inc_at_td_deg"))
+        self._set_line_text(self.azimuth_at_td_deg, row.get("azimuth_at_td_deg"))
+        self._set_line_text(self.max_dls_actual_deg_per_30m, row.get("max_dls_actual_deg_per_30m"))
+        self._set_line_text(self.vs_at_td_m, row.get("vs_at_td_m"))
+        self._set_line_text(self.dist_at_td_m, row.get("dist_at_td_m"))
 
     def collect_data(self) -> dict:
         return {

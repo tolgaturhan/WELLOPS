@@ -148,7 +148,27 @@ def delete_well(well_id: str) -> None:
             (wid,),
         )
         conn.execute(
+            "DELETE FROM well_hse_ticket WHERE well_id = ?",
+            (wid,),
+        )
+        conn.execute(
+            "DELETE FROM well_hse_nozzle WHERE well_id = ?",
+            (wid,),
+        )
+        conn.execute(
+            "DELETE FROM well_hole_section_data WHERE well_id = ?",
+            (wid,),
+        )
+        conn.execute(
+            "DELETE FROM well_hole_sections WHERE well_id = ?",
+            (wid,),
+        )
+        conn.execute(
             "DELETE FROM well_trajectory WHERE well_id = ?",
+            (wid,),
+        )
+        conn.execute(
+            "DELETE FROM well_identity WHERE well_id = ?",
             (wid,),
         )
         conn.execute(

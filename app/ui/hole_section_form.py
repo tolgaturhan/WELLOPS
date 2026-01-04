@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Optional, Dict, Any, List
 
 from PySide6.QtCore import Qt
@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QDialog,
 )
 
+from app.core.canonical import canonical_text
 from app.core.rules.hole_section_rules import (
     validate_hole_section,
     MUD_MOTOR_BRANDS,
@@ -44,6 +45,7 @@ from app.core.hole_section_calcs import (
     eff_drilling_percent,
 )
 
+from app.data import hole_section_data_repo
 from app.ui.dialogs.nozzle_dialog import NozzleDialog
 from app.ui.widgets.decimal_line_edit import DecimalLineEdit
 from app.ui.widgets.time_hhmm_edit import TimeHHMMEdit
@@ -118,11 +120,12 @@ class HoleSectionForm(QWidget):
         self.edt_day_mwd: Optional[QLineEdit] = None
         self.edt_night_mwd: Optional[QLineEdit] = None
 
-        self.edt_info_casing_shoe: Optional[QLineEdit] = None
-        self.edt_info_casing_od_id: Optional[QLineEdit] = None
-        self.edt_info_section_tvd: Optional[QLineEdit] = None
-        self.edt_info_section_md: Optional[QLineEdit] = None
-        self.edt_info_mud_type: Optional[QLineEdit] = None
+        self.edt_info_casing_shoe: Optional[DecimalLineEdit] = None
+        self.cmb_info_casing_od: Optional[QComboBox] = None
+        self.cmb_info_casing_id: Optional[QComboBox] = None
+        self.edt_info_section_tvd: Optional[DecimalLineEdit] = None
+        self.edt_info_section_md: Optional[DecimalLineEdit] = None
+        self.cmb_info_mud_type: Optional[QComboBox] = None
 
         self.dp_call_out_date: Optional[DatePickerLine] = None
         self.edt_crew_mob_time: Optional[TimeHHMMEdit] = None
@@ -157,6 +160,8 @@ class HoleSectionForm(QWidget):
 
         self._build_ui()
         self._wire_live_calcs()
+        self._wire_text_normalization()
+        self._load_from_db()
 
     # ------------------------------------------------------------------
     # UI
@@ -309,10 +314,10 @@ class HoleSectionForm(QWidget):
 
         form.addRow("BRAND", self.cmb_mud_brand)
         form.addRow("SIZE", self.cmb_mud_size)
-        form.addRow("SLEEVE STB GAUGE (IN)", self.edt_sleeve_gauge)
+        form.addRow("SLEEVE STB GAUGE (INCH)", self.edt_sleeve_gauge)
         form.addRow("BEND ANGLE (DEG)", self.cmb_bend_angle)
         form.addRow("LOBE-STAGE", ls_widget)
-        form.addRow("IBS GAUGE (IN)", self.edt_ibs_gauge)
+        form.addRow("IBS GAUGE (INCH)", self.edt_ibs_gauge)
 
         return box
 
@@ -402,19 +407,109 @@ class HoleSectionForm(QWidget):
         form.setVerticalSpacing(8)
         form.setLabelAlignment(Qt.AlignLeft)
 
-        self.edt_info_casing_shoe = QLineEdit()
-        self.edt_info_casing_od_id = QLineEdit()
-        self.edt_info_section_tvd = QLineEdit()
-        self.edt_info_section_md = QLineEdit()
-        self.edt_info_mud_type = QLineEdit()
+        self.edt_info_casing_shoe = DecimalLineEdit()
+        self.edt_info_section_tvd = DecimalLineEdit()
+        self.edt_info_section_md = DecimalLineEdit()
 
-        form.addRow("CASING SHOE", self.edt_info_casing_shoe)
-        form.addRow("CASING OD/ID", self.edt_info_casing_od_id)
-        form.addRow("SECTION TVD", self.edt_info_section_tvd)
-        form.addRow("SECTION MD", self.edt_info_section_md)
-        form.addRow("MUD TYPE", self.edt_info_mud_type)
+        self.cmb_info_mud_type = QComboBox()
+        self.cmb_info_mud_type.setEditable(False)
+        self.cmb_info_mud_type.addItem("Select from list")
+        self.cmb_info_mud_type.model().item(0).setEnabled(False)
+        self.cmb_info_mud_type.setCurrentIndex(0)
+        self.cmb_info_mud_type.addItems(
+            [
+                "AIR",
+                "AERATED",
+                "BENTONITE",
+                "CaCl2 POLYMER",
+                "FOAM",
+                "GEL",
+                "HIGH-TEMPERATURE GEOTHERMAL",
+                "KCL-POLYMER",
+                "LIGNOSULFONATE",
+                "NaCl POLYMER",
+                "OIL BASE",
+                "PHPA",
+                "POLYMER",
+                "SPUD",
+                "SYNTHETIC BASE",
+            ]
+        )
+
+        form.addRow("CASING SHOE (METER)", self.edt_info_casing_shoe)
+        form.addRow("CASING OD/ID (INCH)", self._build_casing_od_id_widget())
+        form.addRow("SECTION TVD (METER)", self.edt_info_section_tvd)
+        form.addRow("SECTION MD (METER)", self.edt_info_section_md)
+        form.addRow("MUD TYPE", self.cmb_info_mud_type)
 
         return box
+
+    def _build_casing_od_id_widget(self) -> QWidget:
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.cmb_info_casing_od = QComboBox()
+        self.cmb_info_casing_od.setEditable(False)
+        self.cmb_info_casing_od.addItem(" Select OD from list")
+        self.cmb_info_casing_od.model().item(0).setEnabled(False)
+        self.cmb_info_casing_od.setCurrentIndex(0)
+        self.cmb_info_casing_od.addItems(
+            [
+                '7"',
+                '8.625"',
+                '9.625"',
+                '10.750"',
+                '11.750"',
+                '13.375"',
+                '16"',
+                '20"',
+            ]
+        )
+
+        self.cmb_info_casing_id = QComboBox()
+        self.cmb_info_casing_id.setEditable(False)
+        self.cmb_info_casing_id.addItem(" Select ID from list")
+        self.cmb_info_casing_id.model().item(0).setEnabled(False)
+        self.cmb_info_casing_id.setCurrentIndex(0)
+
+        self.cmb_info_casing_od.currentTextChanged.connect(self._on_casing_od_changed)
+
+        layout.addWidget(QLabel("OD"))
+        layout.addWidget(self.cmb_info_casing_od, 1)
+        layout.addWidget(QLabel("ID"))
+        layout.addWidget(self.cmb_info_casing_id, 1)
+        return widget
+
+    def _on_casing_od_changed(self, od_value: str) -> None:
+        if self.cmb_info_casing_id is None:
+            return
+
+        id_map = {
+            '7"': ['6.184"', '6.276"', '6.366"'],
+            '8.625"': ['7.921"', '8.097"'],
+            '9.625"': ['8.755"', '8.835"', '8.921"'],
+            '10.750"': ['9.660"', '9.850"'],
+            '11.750"': ['10.772"', '10.920"'],
+            '13.375"': ['12.100"', '12.347"'],
+            '16"': ['14.868"', '15.124"'],
+            '20"': ['18.730"'],
+        }
+
+        prev = self.cmb_info_casing_id.currentText()
+        self.cmb_info_casing_id.blockSignals(True)
+        self.cmb_info_casing_id.clear()
+        self.cmb_info_casing_id.addItem(" Select ID from list")
+        self.cmb_info_casing_id.model().item(0).setEnabled(False)
+        for item in id_map.get(od_value, []):
+            self.cmb_info_casing_id.addItem(item)
+        self.cmb_info_casing_id.setCurrentIndex(0)
+        if prev in id_map.get(od_value, []):
+            idx = self.cmb_info_casing_id.findText(prev)
+            if idx >= 0:
+                self.cmb_info_casing_id.setCurrentIndex(idx)
+        self.cmb_info_casing_id.blockSignals(False)
 
     def _build_time_analysis_group(self) -> QGroupBox:
         box = self._group_box("TIME ANALYSIS")
@@ -576,6 +671,41 @@ class HoleSectionForm(QWidget):
             if w is not None:
                 hook(w, "date_changed")
 
+    def _wire_text_normalization(self) -> None:
+        def canonical_text_live(raw: str) -> str:
+            canon = canonical_text(raw)
+            if raw and raw[-1].isspace() and canon:
+                return canon + " "
+            return canon
+
+        def normalize_line_edit(le: Optional[QLineEdit]) -> None:
+            if le is None or le.isReadOnly():
+                return
+
+            def _on_text_edited(_text: str) -> None:
+                canon = canonical_text_live(le.text())
+                if canon != le.text():
+                    cursor = le.cursorPosition()
+                    le.blockSignals(True)
+                    le.setText(canon)
+                    le.setCursorPosition(min(cursor, len(canon)))
+                    le.blockSignals(False)
+
+            le.textEdited.connect(_on_text_edited)
+
+        for le in (
+            self.edt_bit_type,
+            self.edt_bit_iadc,
+            self.edt_bit_serial,
+            self.edt_day_dd,
+            self.edt_night_dd,
+            self.edt_day_mwd,
+            self.edt_night_mwd,
+            self.edt_info_section_tvd,
+            self.edt_info_section_md,
+        ):
+            normalize_line_edit(le)
+
     def _recompute_derived(self) -> None:
         # TOTAL DRILLING TIME / METERS
         if self.edt_rotary_time and self.edt_sliding_time and self.edt_total_drilling_time:
@@ -671,12 +801,31 @@ class HoleSectionForm(QWidget):
         data["personnel_day_mwd"] = self.edt_day_mwd.text().strip() if self.edt_day_mwd else ""
         data["personnel_night_mwd"] = self.edt_night_mwd.text().strip() if self.edt_night_mwd else ""
 
-        # INFO (kept UI-only; not validated by rules currently)
+        # INFO
         data["info_casing_shoe"] = self.edt_info_casing_shoe.text().strip() if self.edt_info_casing_shoe else ""
-        data["info_casing_od_id"] = self.edt_info_casing_od_id.text().strip() if self.edt_info_casing_od_id else ""
+        if self.cmb_info_casing_od:
+            od = self.cmb_info_casing_od.currentText().strip()
+            if od in {"Select OD from list", "Select from list"}:
+                od = ""
+        else:
+            od = ""
+        if self.cmb_info_casing_id:
+            cid = self.cmb_info_casing_id.currentText().strip()
+            if cid in {"Select ID from list", "Select from list"}:
+                cid = ""
+        else:
+            cid = ""
+        data["info_casing_od"] = od
+        data["info_casing_id"] = cid
         data["info_section_tvd"] = self.edt_info_section_tvd.text().strip() if self.edt_info_section_tvd else ""
         data["info_section_md"] = self.edt_info_section_md.text().strip() if self.edt_info_section_md else ""
-        data["info_mud_type"] = self.edt_info_mud_type.text().strip() if self.edt_info_mud_type else ""
+        if self.cmb_info_mud_type:
+            mud_type = self.cmb_info_mud_type.currentText().strip()
+            if mud_type == "Select from list":
+                mud_type = ""
+        else:
+            mud_type = ""
+        data["info_mud_type"] = mud_type
 
         # TIME ANALYSIS (rules keys)
         data["ta_call_out_date"] = self.dp_call_out_date.date_value() if self.dp_call_out_date else None
@@ -734,19 +883,174 @@ class HoleSectionForm(QWidget):
     # Actions
     # ------------------------------------------------------------------
     def _on_validate_clicked(self) -> None:
+        self._validate_section(show_success=True)
+
+    def _on_save_clicked(self) -> None:
+        result = self._validate_section(show_success=False)
+        if not result.ok:
+            return
+
+        data = self._collect_section_data()
+        try:
+            hole_section_data_repo.save_hole_section(self._well_id, self._hole_node_key, data)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save Hole Section.\n\nDetails:\n{e!r}")
+            return
+
+        QMessageBox.information(self, "Information", "Saved.")
+
+    def _validate_section(self, *, show_success: bool):
         data = self._collect_section_data()
         result = validate_hole_section(data)
 
-        # Always apply computed values (even if errors exist) to help user see what’s wrong.
+        # Always apply computed values (even if errors exist) to help user see what's wrong.
         self._apply_computed(result.computed)
 
         if result.ok:
-            QMessageBox.information(self, "Information", "Validation passed. No issues found.")
-            return
+            if show_success:
+                QMessageBox.information(self, "Information", "Validation passed. No issues found.")
+            return result
 
         msg = "Please fix the following issues:\n\n" + "\n".join(f"- {e}" for e in result.errors)
         QMessageBox.warning(self, "Validation Error", msg)
+        return result
 
-    def _on_save_clicked(self) -> None:
-        # UI-only: no DB wiring yet.
-        QMessageBox.information(self, "Information", "Saved (not yet wired to DB).")
+    def _parse_date(self, value: object) -> Optional[date]:
+        if value is None:
+            return None
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+        if isinstance(value, datetime):
+            return value.date()
+        s = str(value).strip()
+        if not s:
+            return None
+        try:
+            return datetime.strptime(s, "%Y-%m-%d").date()
+        except Exception:
+            pass
+        try:
+            return datetime.strptime(s, "%d.%m.%Y").date()
+        except Exception:
+            return None
+
+    def _set_combo_value(self, combo: Optional[QComboBox], value: object) -> None:
+        if combo is None:
+            return
+        s = str(value).strip() if value is not None else ""
+        if not s:
+            return
+        idx = combo.findText(s)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+            return
+        if combo.isEditable():
+            combo.setEditText(s)
+
+    def _set_line_text(self, widget: Optional[QLineEdit], value: object) -> None:
+        if widget is None:
+            return
+        s = "" if value is None else str(value)
+        if s == "":
+            return
+        widget.setText(s)
+
+    def _set_decimal_text(self, widget: Optional[DecimalLineEdit], value: object) -> None:
+        if widget is None:
+            return
+        if value is None:
+            return
+        widget.setText(str(value))
+
+    def _load_from_db(self) -> None:
+        row = hole_section_data_repo.get_hole_section(self._well_id, self._hole_node_key)
+        if not row:
+            return
+
+        # MUD MOTOR
+        self._set_combo_value(self.cmb_mud_brand, row.get("mud_motor_brand"))
+        self._set_combo_value(self.cmb_mud_size, row.get("mud_motor_size"))
+        self._set_decimal_text(self.edt_sleeve_gauge, row.get("mud_motor_sleeve_stb_gauge_in"))
+        self._set_combo_value(self.cmb_bend_angle, row.get("mud_motor_bend_angle_deg"))
+        self._set_combo_value(self.cmb_lobe, row.get("mud_motor_lobe"))
+        self._set_combo_value(self.cmb_stage, row.get("mud_motor_stage"))
+        self._set_decimal_text(self.edt_ibs_gauge, row.get("mud_motor_ibs_gauge_in"))
+
+        # BIT
+        self._set_combo_value(self.cmb_bit_brand, row.get("bit_brand"))
+        self._set_combo_value(self.cmb_bit_kind, row.get("bit_kind"))
+        self._set_line_text(self.edt_bit_type, row.get("bit_type"))
+        self._set_line_text(self.edt_bit_iadc, row.get("bit_iadc"))
+        self._set_line_text(self.edt_bit_serial, row.get("bit_serial"))
+
+        # PERSONNEL
+        self._set_line_text(self.edt_day_dd, row.get("personnel_day_dd"))
+        self._set_line_text(self.edt_night_dd, row.get("personnel_night_dd"))
+        self._set_line_text(self.edt_day_mwd, row.get("personnel_day_mwd"))
+        self._set_line_text(self.edt_night_mwd, row.get("personnel_night_mwd"))
+
+        # INFO
+        self._set_decimal_text(self.edt_info_casing_shoe, row.get("info_casing_shoe"))
+        od_val = row.get("info_casing_od")
+        id_val = row.get("info_casing_id")
+        if (not od_val or not id_val) and row.get("info_casing_od_id"):
+            raw = str(row.get("info_casing_od_id") or "")
+            if "/" in raw:
+                parts = [p.strip() for p in raw.split("/", 1)]
+                if len(parts) == 2:
+                    od_val = od_val or parts[0]
+                    id_val = id_val or parts[1]
+        if self.cmb_info_casing_od:
+            self._set_combo_value(self.cmb_info_casing_od, od_val)
+        if self.cmb_info_casing_id:
+            self._on_casing_od_changed(str(od_val or ""))
+            self._set_combo_value(self.cmb_info_casing_id, id_val)
+        self._set_decimal_text(self.edt_info_section_tvd, row.get("info_section_tvd"))
+        self._set_decimal_text(self.edt_info_section_md, row.get("info_section_md"))
+        if self.cmb_info_mud_type:
+            self._set_combo_value(self.cmb_info_mud_type, row.get("info_mud_type"))
+
+        # TIME ANALYSIS
+        if self.dp_call_out_date:
+            self.dp_call_out_date.set_date(self._parse_date(row.get("ta_call_out_date")))
+        if self.edt_crew_mob_time:
+            self.edt_crew_mob_time.setText(str(row.get("ta_crew_mob_time") or ""))
+        self._set_decimal_text(self.edt_standby, row.get("ta_standby_time_hrs"))
+        self._set_decimal_text(self.edt_ru, row.get("ta_ru_time_hrs"))
+        self._set_decimal_text(self.edt_tripping, row.get("ta_tripping_time_hrs"))
+        self._set_decimal_text(self.edt_circulation, row.get("ta_circulation_time_hrs"))
+        self._set_decimal_text(self.edt_rotary_time, row.get("ta_rotary_time_hrs"))
+        self._set_decimal_text(self.edt_rotary_m, row.get("ta_rotary_meters"))
+        self._set_decimal_text(self.edt_sliding_time, row.get("ta_sliding_time_hrs"))
+        self._set_decimal_text(self.edt_sliding_m, row.get("ta_sliding_meters"))
+        self._set_decimal_text(self.edt_npt_rig, row.get("ta_npt_due_to_rig_hrs"))
+        self._set_decimal_text(self.edt_npt_motor, row.get("ta_npt_due_to_motor_hrs"))
+        self._set_decimal_text(self.edt_npt_mwd, row.get("ta_npt_due_to_mwd_hrs"))
+        if self.dp_release_date:
+            self.dp_release_date.set_date(self._parse_date(row.get("ta_release_date")))
+        if self.edt_release_time:
+            self.edt_release_time.setText(str(row.get("ta_release_time") or ""))
+        self._set_decimal_text(self.edt_total_brt, row.get("ta_total_brt_hrs"))
+
+        # TICKET ROWS
+        for t in row.get("tickets", []):
+            line_no = int(t.get("line_no", 0))
+            if line_no <= 0:
+                continue
+            date_key = f"ticket_date_{line_no}"
+            price_key = f"ticket_price_usd_{line_no}"
+            if date_key in self._ticket_dates:
+                self._ticket_dates[date_key].set_date(self._parse_date(t.get("ticket_date")))
+            if price_key in self._ticket_prices and t.get("ticket_price_usd") is not None:
+                try:
+                    self._ticket_prices[price_key].setValue(float(t.get("ticket_price_usd")))
+                except Exception:
+                    pass
+
+        # NOZZLES
+        nozzles = row.get("nozzles", [])
+        if nozzles:
+            self._nozzles = list(nozzles)
+            self._sync_nozzle_fields()
+
+        self._recompute_derived()

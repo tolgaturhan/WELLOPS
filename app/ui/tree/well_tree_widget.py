@@ -30,11 +30,11 @@ class WellTreeWidget(QWidget):
 
     # Locked hole size display labels (must match project decision)
     _HOLE_SIZE_ITEMS = (
-        ("HSE_26", '26” HSE'),
-        ("HSE_17_1_2", '17 1/2” HSE'),
-        ("HSE_12_1_4", '12 1/4” HSE'),
-        ("HSE_8_1_2", '8 1/2” HSE'),
-        ("HSE_6", '6” HSE'),
+        ("HSE_26", '26" HSE'),
+        ("HSE_17_1_2", '17 1/2" HSE'),
+        ("HSE_12_1_4", '12 1/4" HSE'),
+        ("HSE_8_1_2", '8 1/2" HSE'),
+        ("HSE_6", '6" HSE'),
     )
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
