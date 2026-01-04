@@ -130,8 +130,8 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(self._stack)
 
-        splitter.setStretchFactor(0, 2)
-        splitter.setStretchFactor(1, 8)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 9)
 
         container = QWidget(self)
         root_layout = QHBoxLayout(container)

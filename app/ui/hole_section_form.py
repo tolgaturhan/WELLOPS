@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
+    QGridLayout,
     QLabel,
     QGroupBox,
     QFormLayout,
@@ -34,6 +35,8 @@ from app.core.rules.hole_section_rules import (
     STAGE_LIST,
     BIT_BRANDS,
     BIT_KINDS,
+    CASING_OD_OPTIONS,
+    CASING_ID_BY_OD,
 )
 from app.core.hole_section_calcs import (
     NozzleLine,
@@ -92,33 +95,19 @@ class HoleSectionForm(QWidget):
         self._well_id: str = str(well_id).strip()
         self._hole_node_key: str = str(hole_node_key).strip()
 
-        # state for nozzle dialog
-        self._nozzles: List[NozzleLine] = []
-
         # widget handles
         self._ticket_dates: Dict[str, DatePickerLine] = {}
         self._ticket_prices: Dict[str, QDoubleSpinBox] = {}
 
-        self.cmb_mud_brand: Optional[QComboBox] = None
-        self.cmb_mud_size: Optional[QComboBox] = None
-        self.edt_sleeve_gauge: Optional[DecimalLineEdit] = None
-        self.cmb_bend_angle: Optional[QComboBox] = None
-        self.cmb_lobe: Optional[QComboBox] = None
-        self.cmb_stage: Optional[QComboBox] = None
-        self.edt_ibs_gauge: Optional[DecimalLineEdit] = None
+        self._mud_motor_widgets: Dict[int, Dict[str, QComboBox | DecimalLineEdit]] = {}
 
-        self.cmb_bit_brand: Optional[QComboBox] = None
-        self.cmb_bit_kind: Optional[QComboBox] = None
-        self.edt_bit_type: Optional[QLineEdit] = None
-        self.edt_bit_iadc: Optional[QLineEdit] = None
-        self.edt_bit_serial: Optional[QLineEdit] = None
-        self.edt_nozzle_summary: Optional[QLineEdit] = None
-        self.edt_tfa_in2: Optional[QLineEdit] = None
+        self._bit_widgets: Dict[int, Dict[str, QLineEdit | QComboBox]] = {}
+        self._bit_nozzles: Dict[int, List[NozzleLine]] = {1: [], 2: []}
 
-        self.edt_day_dd: Optional[QLineEdit] = None
-        self.edt_night_dd: Optional[QLineEdit] = None
-        self.edt_day_mwd: Optional[QLineEdit] = None
-        self.edt_night_mwd: Optional[QLineEdit] = None
+        self.edt_day_dd: List[QLineEdit] = []
+        self.edt_night_dd: List[QLineEdit] = []
+        self.edt_day_mwd: List[QLineEdit] = []
+        self.edt_night_mwd: List[QLineEdit] = []
 
         self.edt_info_casing_shoe: Optional[DecimalLineEdit] = None
         self.cmb_info_casing_od: Optional[QComboBox] = None
@@ -129,31 +118,14 @@ class HoleSectionForm(QWidget):
 
         self.dp_call_out_date: Optional[DatePickerLine] = None
         self.edt_crew_mob_time: Optional[TimeHHMMEdit] = None
-
-        self.edt_standby: Optional[DecimalLineEdit] = None
-        self.edt_ru: Optional[DecimalLineEdit] = None
-        self.edt_tripping: Optional[DecimalLineEdit] = None
-        self.edt_circulation: Optional[DecimalLineEdit] = None
-
-        self.edt_rotary_time: Optional[DecimalLineEdit] = None
-        self.edt_rotary_m: Optional[DecimalLineEdit] = None
-        self.edt_sliding_time: Optional[DecimalLineEdit] = None
-        self.edt_sliding_m: Optional[DecimalLineEdit] = None
-
-        self.edt_total_drilling_time: Optional[QLineEdit] = None
-        self.edt_total_drilling_m: Optional[QLineEdit] = None
-
-        self.edt_npt_rig: Optional[DecimalLineEdit] = None
-        self.edt_npt_motor: Optional[DecimalLineEdit] = None
-        self.edt_npt_mwd: Optional[DecimalLineEdit] = None
-
         self.dp_release_date: Optional[DatePickerLine] = None
         self.edt_release_time: Optional[TimeHHMMEdit] = None
-
         self.edt_mob_to_release: Optional[QLineEdit] = None
 
-        self.edt_total_brt: Optional[DecimalLineEdit] = None
-        self.edt_eff_drilling: Optional[QLineEdit] = None
+        self._ta_inputs: Dict[str, Dict[int, DecimalLineEdit]] = {}
+        self._ta_totals: Dict[str, QLineEdit] = {}
+        self._ta_auto_runs: Dict[str, Dict[int, QLineEdit]] = {}
+        self._ta_auto_totals: Dict[str, QLineEdit] = {}
 
         self.btn_validate: Optional[QPushButton] = None
         self.btn_save: Optional[QPushButton] = None
@@ -280,102 +252,142 @@ class HoleSectionForm(QWidget):
 
     def _build_mud_motor_group(self) -> QGroupBox:
         box = self._group_box("MUD MOTOR")
+        layout = QHBoxLayout(box)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(12)
+
+        layout.addWidget(self._build_mud_motor_subgroup(1, "MUD MOTOR - 1"), 1)
+        layout.addWidget(self._build_mud_motor_subgroup(2, "MUD MOTOR - 2"), 1)
+
+        return box
+
+    def _build_mud_motor_subgroup(self, motor_index: int, title: str) -> QGroupBox:
+        box = QGroupBox(title)
         form = QFormLayout(box)
         form.setContentsMargins(12, 12, 12, 12)
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(8)
         form.setLabelAlignment(Qt.AlignLeft)
 
-        self.cmb_mud_brand = self._combo_with_placeholder("Select from list", list(MUD_MOTOR_BRANDS))
-        self.cmb_mud_size = self._combo_with_placeholder("Select from list", list(MUD_MOTOR_SIZES))
+        cmb_brand = self._combo_with_placeholder("Select from list", list(MUD_MOTOR_BRANDS))
+        cmb_size = self._combo_with_placeholder("Select from list", list(MUD_MOTOR_SIZES))
 
-        self.edt_sleeve_gauge = DecimalLineEdit()
-        self.edt_sleeve_gauge.setPlaceholderText("e.g., 12.125")
+        edt_sleeve_gauge = DecimalLineEdit()
+        edt_sleeve_gauge.setPlaceholderText("e.g., 12.125")
 
-        self.cmb_bend_angle = self._combo_with_placeholder("Select from list", list(BEND_ANGLES_DEG))
+        cmb_bend_angle = self._combo_with_placeholder("Select from list", list(BEND_ANGLES_DEG))
 
-        # LOBE-STAGE: two combos in one row
         ls_widget = QWidget()
         ls_layout = QHBoxLayout(ls_widget)
         ls_layout.setContentsMargins(0, 0, 0, 0)
         ls_layout.setSpacing(10)
 
-        self.cmb_lobe = self._combo_with_placeholder("Select from list", list(LOBE_LIST))
-        self.cmb_stage = self._combo_with_placeholder("Select from list", list(STAGE_LIST))
+        cmb_lobe = self._combo_with_placeholder("Select from list", list(LOBE_LIST))
+        cmb_stage = self._combo_with_placeholder("Select from list", list(STAGE_LIST))
 
         ls_layout.addWidget(QLabel("LOBE"))
-        ls_layout.addWidget(self.cmb_lobe, 1)
+        ls_layout.addWidget(cmb_lobe, 1)
         ls_layout.addWidget(QLabel("STAGE"))
-        ls_layout.addWidget(self.cmb_stage, 1)
+        ls_layout.addWidget(cmb_stage, 1)
 
-        self.edt_ibs_gauge = DecimalLineEdit()
-        self.edt_ibs_gauge.setPlaceholderText("e.g., 11.937")
-        self.edt_ibs_gauge.set_allow_empty(True)
+        edt_ibs_gauge = DecimalLineEdit()
+        edt_ibs_gauge.setPlaceholderText("e.g., 11.937")
+        edt_ibs_gauge.set_allow_empty(True)
 
-        form.addRow("BRAND", self.cmb_mud_brand)
-        form.addRow("SIZE", self.cmb_mud_size)
-        form.addRow("SLEEVE STB GAUGE (INCH)", self.edt_sleeve_gauge)
-        form.addRow("BEND ANGLE (DEG)", self.cmb_bend_angle)
+        form.addRow("BRAND", cmb_brand)
+        form.addRow("SIZE", cmb_size)
+        form.addRow("SLEEVE STB GAUGE (INCH)", edt_sleeve_gauge)
+        form.addRow("BEND ANGLE (DEG)", cmb_bend_angle)
         form.addRow("LOBE-STAGE", ls_widget)
-        form.addRow("IBS GAUGE (INCH)", self.edt_ibs_gauge)
+        form.addRow("IBS GAUGE (INCH)", edt_ibs_gauge)
+
+        self._mud_motor_widgets[motor_index] = {
+            "cmb_brand": cmb_brand,
+            "cmb_size": cmb_size,
+            "edt_sleeve": edt_sleeve_gauge,
+            "cmb_bend": cmb_bend_angle,
+            "cmb_lobe": cmb_lobe,
+            "cmb_stage": cmb_stage,
+            "edt_ibs": edt_ibs_gauge,
+        }
 
         return box
 
     def _build_bit_group(self) -> QGroupBox:
         box = self._group_box("BIT")
+        layout = QHBoxLayout(box)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(12)
+
+        layout.addWidget(self._build_bit_subgroup(1, "BIT - 1"), 1)
+        layout.addWidget(self._build_bit_subgroup(2, "BIT - 2"), 1)
+
+        return box
+
+    def _build_bit_subgroup(self, bit_index: int, title: str) -> QGroupBox:
+        box = QGroupBox(title)
         form = QFormLayout(box)
         form.setContentsMargins(12, 12, 12, 12)
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(8)
         form.setLabelAlignment(Qt.AlignLeft)
 
-        # BRAND + (PDC/TRICONE) side-by-side
         brand_kind = QWidget()
         hk = QHBoxLayout(brand_kind)
         hk.setContentsMargins(0, 0, 0, 0)
         hk.setSpacing(10)
 
-        self.cmb_bit_brand = self._combo_with_placeholder("Select from list", list(BIT_BRANDS))
-        self.cmb_bit_kind = self._combo_with_placeholder("Select from list", list(BIT_KINDS))
+        cmb_brand = self._combo_with_placeholder("Select from list", list(BIT_BRANDS))
+        cmb_kind = self._combo_with_placeholder("Select from list", list(BIT_KINDS))
 
-        hk.addWidget(self.cmb_bit_brand, 2)
-        hk.addWidget(self.cmb_bit_kind, 1)
+        hk.addWidget(cmb_brand, 2)
+        hk.addWidget(cmb_kind, 1)
 
-        self.edt_bit_type = QLineEdit()
-        self.edt_bit_type.setPlaceholderText("e.g., TKC66, TX36275")
+        edt_type = QLineEdit()
+        edt_type.setPlaceholderText("e.g., TKC66, TX36275")
 
-        self.edt_bit_iadc = QLineEdit()
-        self.edt_bit_iadc.setPlaceholderText("e.g., 517, 537G, M423")
+        edt_iadc = QLineEdit()
+        edt_iadc.setPlaceholderText("e.g., 517, 537G, M423")
 
-        self.edt_bit_serial = QLineEdit()
-        self.edt_bit_serial.setPlaceholderText("e.g., F310849, 5360463")
+        edt_serial = QLineEdit()
+        edt_serial.setPlaceholderText("e.g., F310849, 5360463")
 
-        # NOZZLE/TFA: nozzle summary (click to open dialog) + TFA read-only
         nt_widget = QWidget()
         nt_layout = QHBoxLayout(nt_widget)
         nt_layout.setContentsMargins(0, 0, 0, 0)
         nt_layout.setSpacing(10)
 
-        self.edt_nozzle_summary = QLineEdit()
-        self.edt_nozzle_summary.setReadOnly(True)
-        self.edt_nozzle_summary.setPlaceholderText("Click to select nozzles")
-        self.edt_nozzle_summary.setCursor(Qt.PointingHandCursor)
-        # click handler
-        self.edt_nozzle_summary.mousePressEvent = self._on_nozzle_clicked  # type: ignore[assignment]
+        edt_nozzle_summary = QLineEdit()
+        edt_nozzle_summary.setReadOnly(True)
+        edt_nozzle_summary.setPlaceholderText("Click to select nozzles")
+        edt_nozzle_summary.setCursor(Qt.PointingHandCursor)
+        edt_nozzle_summary.mousePressEvent = (
+            lambda event, idx=bit_index: self._on_nozzle_clicked(idx, event)
+        )  # type: ignore[assignment]
 
-        self.edt_tfa_in2 = QLineEdit()
-        self.edt_tfa_in2.setReadOnly(True)
-        self.edt_tfa_in2.setPlaceholderText("Auto")
+        edt_tfa_in2 = QLineEdit()
+        edt_tfa_in2.setReadOnly(True)
+        edt_tfa_in2.setPlaceholderText("Auto")
 
-        nt_layout.addWidget(self.edt_nozzle_summary, 2)
+        nt_layout.addWidget(edt_nozzle_summary, 2)
         nt_layout.addWidget(QLabel("TFA (IN^2)"))
-        nt_layout.addWidget(self.edt_tfa_in2, 1)
+        nt_layout.addWidget(edt_tfa_in2, 1)
 
-        form.addRow("BRAND / PDC-TRICONE", brand_kind)
-        form.addRow("TYPE", self.edt_bit_type)
-        form.addRow("IADC", self.edt_bit_iadc)
-        form.addRow("SERIAL", self.edt_bit_serial)
+        form.addRow("BRAND / BIT TYPE", brand_kind)
+        form.addRow("TYPE", edt_type)
+        form.addRow("IADC", edt_iadc)
+        form.addRow("SERIAL", edt_serial)
         form.addRow("NOZZLE/TFA", nt_widget)
+
+        self._bit_widgets[bit_index] = {
+            "cmb_brand": cmb_brand,
+            "cmb_kind": cmb_kind,
+            "edt_type": edt_type,
+            "edt_iadc": edt_iadc,
+            "edt_serial": edt_serial,
+            "edt_nozzle_summary": edt_nozzle_summary,
+            "edt_tfa_in2": edt_tfa_in2,
+        }
 
         return box
 
@@ -387,17 +399,27 @@ class HoleSectionForm(QWidget):
         form.setVerticalSpacing(8)
         form.setLabelAlignment(Qt.AlignLeft)
 
-        self.edt_day_dd = QLineEdit()
-        self.edt_night_dd = QLineEdit()
-        self.edt_day_mwd = QLineEdit()
-        self.edt_night_mwd = QLineEdit()
-
-        form.addRow("DAY DD", self.edt_day_dd)
-        form.addRow("NIGHT DD", self.edt_night_dd)
-        form.addRow("DAY MWD", self.edt_day_mwd)
-        form.addRow("NIGHT MWD", self.edt_night_mwd)
+        form.addRow("DAY DD", self._build_personnel_row(self.edt_day_dd))
+        form.addRow("NIGHT DD", self._build_personnel_row(self.edt_night_dd))
+        form.addRow("DAY MWD", self._build_personnel_row(self.edt_day_mwd))
+        form.addRow("NIGHT MWD", self._build_personnel_row(self.edt_night_mwd))
 
         return box
+
+    def _build_personnel_row(self, bucket: List[QLineEdit]) -> QWidget:
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        placeholders = ["First Personnel", "Second Personnel", "Third Personnel"]
+        for placeholder in placeholders:
+            le = QLineEdit()
+            le.setPlaceholderText(placeholder)
+            bucket.append(le)
+            layout.addWidget(le, 1)
+
+        return widget
 
     def _build_info_group(self) -> QGroupBox:
         box = self._group_box("INFO")
@@ -455,18 +477,7 @@ class HoleSectionForm(QWidget):
         self.cmb_info_casing_od.addItem(" Select OD from list")
         self.cmb_info_casing_od.model().item(0).setEnabled(False)
         self.cmb_info_casing_od.setCurrentIndex(0)
-        self.cmb_info_casing_od.addItems(
-            [
-                '7"',
-                '8.625"',
-                '9.625"',
-                '10.750"',
-                '11.750"',
-                '13.375"',
-                '16"',
-                '20"',
-            ]
-        )
+        self.cmb_info_casing_od.addItems(list(CASING_OD_OPTIONS))
 
         self.cmb_info_casing_id = QComboBox()
         self.cmb_info_casing_id.setEditable(False)
@@ -486,35 +497,103 @@ class HoleSectionForm(QWidget):
         if self.cmb_info_casing_id is None:
             return
 
-        id_map = {
-            '7"': ['6.184"', '6.276"', '6.366"'],
-            '8.625"': ['7.921"', '8.097"'],
-            '9.625"': ['8.755"', '8.835"', '8.921"'],
-            '10.750"': ['9.660"', '9.850"'],
-            '11.750"': ['10.772"', '10.920"'],
-            '13.375"': ['12.100"', '12.347"'],
-            '16"': ['14.868"', '15.124"'],
-            '20"': ['18.730"'],
-        }
-
         prev = self.cmb_info_casing_id.currentText()
         self.cmb_info_casing_id.blockSignals(True)
         self.cmb_info_casing_id.clear()
         self.cmb_info_casing_id.addItem(" Select ID from list")
         self.cmb_info_casing_id.model().item(0).setEnabled(False)
-        for item in id_map.get(od_value, []):
+        for item in CASING_ID_BY_OD.get(od_value, ()):
             self.cmb_info_casing_id.addItem(item)
         self.cmb_info_casing_id.setCurrentIndex(0)
-        if prev in id_map.get(od_value, []):
+        if prev in CASING_ID_BY_OD.get(od_value, ()):
             idx = self.cmb_info_casing_id.findText(prev)
             if idx >= 0:
                 self.cmb_info_casing_id.setCurrentIndex(idx)
         self.cmb_info_casing_id.blockSignals(False)
 
+        self._sync_open_hole_casing_shoe()
+
+    def _sync_open_hole_casing_shoe(self) -> None:
+        if not self.cmb_info_casing_od or not self.cmb_info_casing_id or not self.edt_info_casing_shoe:
+            return
+        od = self.cmb_info_casing_od.currentText().strip()
+        cid = self.cmb_info_casing_id.currentText().strip()
+        if od == "OPEN HOLE" and cid == "OPEN HOLE":
+            self.edt_info_casing_shoe.setText("0")
+
     def _build_time_analysis_group(self) -> QGroupBox:
         box = self._group_box("TIME ANALYSIS")
-        form = QFormLayout(box)
-        form.setContentsMargins(12, 12, 12, 12)
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+
+        header_labels = ["", "RUN - 1", "RUN - 2", "RUN - 3", "SECTION TOTAL"]
+        for col, text in enumerate(header_labels):
+            lbl = QLabel(text)
+            if col > 0:
+                font = lbl.font()
+                font.setBold(True)
+                lbl.setFont(font)
+                lbl.setAlignment(Qt.AlignCenter)
+            grid.addWidget(lbl, 0, col)
+
+        row_idx = 1
+        rows = [
+            ("STANDBY TIME (HRS)", "ta_standby_time_hrs", "editable", "e.g., 0, 12, 48, 107.85"),
+            ("R/U TIME (HRS)", "ta_ru_time_hrs", "editable", "e.g., 0, 4.5, 7, 9.25"),
+            ("TRIPPING TIME (HRS)", "ta_tripping_time_hrs", "editable", "e.g., 0, 4.5, 7, 9.25"),
+            ("CIRCULATION TIME (HRS)", "ta_circulation_time_hrs", "editable", "e.g., 0, 88, 93.75, 102.6"),
+            ("ROTARY TIME (HRS)", "ta_rotary_time_hrs", "editable", "e.g., 0, 189, 205.24, 246.7"),
+            ("ROTARY (METER)", "ta_rotary_meters", "editable", "e.g., 0, 634.78, 725, 1204.6"),
+            ("SLIDING TIME (HRS)", "ta_sliding_time_hrs", "editable", "e.g., 0, 25, 54.6"),
+            ("SLIDING (METER)", "ta_sliding_meters", "editable", "e.g., 0, 124, 167.5"),
+            ("TOTAL DRILLING TIME (HRS)", "ta_total_drilling_time_hrs", "auto", ""),
+            ("TOTAL DRILLING (METER)", "ta_total_drilling_meters", "auto", ""),
+            ("NPT DUE TO RIG (HRS)", "ta_npt_due_to_rig_hrs", "editable", "e.g., 0, 16, 27.8"),
+            ("NPT DUE TO MOTOR (HRS)", "ta_npt_due_to_motor_hrs", "editable", "e.g., 0, 16, 27.8"),
+            ("NPT DUE TO MWD (HRS)", "ta_npt_due_to_mwd_hrs", "editable", "e.g., 0, 16, 27.8"),
+            ("BRT (HRS)", "ta_brt_hrs", "editable", "e.g., 0, 180, 212.45, 370.5"),
+            ("%EFF DRILLING", "ta_eff_drilling_pct", "auto", ""),
+        ]
+
+        for label, key, kind, placeholder in rows:
+            grid.addWidget(QLabel(label), row_idx, 0)
+            if kind == "editable":
+                self._ta_inputs[key] = {}
+                for run in (1, 2, 3):
+                    edt = DecimalLineEdit()
+                    edt.setPlaceholderText(placeholder)
+                    self._ta_inputs[key][run] = edt
+                    grid.addWidget(edt, row_idx, run)
+
+                total = QLineEdit()
+                total.setReadOnly(True)
+                total.setPlaceholderText("Auto")
+                self._ta_totals[key] = total
+                grid.addWidget(total, row_idx, 4)
+            else:
+                self._ta_auto_runs[key] = {}
+                for run in (1, 2, 3):
+                    edt = QLineEdit()
+                    edt.setReadOnly(True)
+                    edt.setPlaceholderText("Auto")
+                    self._ta_auto_runs[key][run] = edt
+                    grid.addWidget(edt, row_idx, run)
+
+                total = QLineEdit()
+                total.setReadOnly(True)
+                total.setPlaceholderText("Auto")
+                self._ta_auto_totals[key] = total
+                grid.addWidget(total, row_idx, 4)
+            row_idx += 1
+
+        layout.addLayout(grid)
+
+        form = QFormLayout()
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(8)
         form.setLabelAlignment(Qt.AlignLeft)
@@ -527,48 +606,6 @@ class HoleSectionForm(QWidget):
         self.edt_crew_mob_time = TimeHHMMEdit()
         self.edt_crew_mob_time.setPlaceholderText("e.g., 16:30, 24:00, 00:00")
 
-        self.edt_standby = DecimalLineEdit()
-        self.edt_standby.setPlaceholderText("e.g., 0, 12, 48, 107.85")
-
-        self.edt_ru = DecimalLineEdit()
-        self.edt_ru.setPlaceholderText("e.g., 0, 4.5, 7, 9.25")
-
-        self.edt_tripping = DecimalLineEdit()
-        self.edt_tripping.setPlaceholderText("e.g., 0, 4.5, 7, 9.25")
-
-        self.edt_circulation = DecimalLineEdit()
-        self.edt_circulation.setPlaceholderText("e.g., 0, 88, 93.75, 102.6")
-
-        self.edt_rotary_time = DecimalLineEdit()
-        self.edt_rotary_time.setPlaceholderText("e.g., 0, 189, 205.24, 246.7")
-
-        self.edt_rotary_m = DecimalLineEdit()
-        self.edt_rotary_m.setPlaceholderText("e.g., 0, 634.78, 725, 1204.6")
-
-        self.edt_sliding_time = DecimalLineEdit()
-        self.edt_sliding_time.setPlaceholderText("e.g., 0, 25, 54.6")
-
-        self.edt_sliding_m = DecimalLineEdit()
-        self.edt_sliding_m.setPlaceholderText("e.g., 0, 124, 167.5")
-
-        # Derived totals (read-only)
-        self.edt_total_drilling_time = QLineEdit()
-        self.edt_total_drilling_time.setReadOnly(True)
-        self.edt_total_drilling_time.setPlaceholderText("Auto")
-
-        self.edt_total_drilling_m = QLineEdit()
-        self.edt_total_drilling_m.setReadOnly(True)
-        self.edt_total_drilling_m.setPlaceholderText("Auto")
-
-        self.edt_npt_rig = DecimalLineEdit()
-        self.edt_npt_rig.setPlaceholderText("e.g., 0, 16, 27.8")
-
-        self.edt_npt_motor = DecimalLineEdit()
-        self.edt_npt_motor.setPlaceholderText("e.g., 0, 16, 27.8")
-
-        self.edt_npt_mwd = DecimalLineEdit()
-        self.edt_npt_mwd.setPlaceholderText("e.g., 0, 16, 27.8")
-
         self.dp_release_date = DatePickerLine()
         self.dp_release_date.set_placeholder("Important: If not released, choose the latest invoice date")
 
@@ -579,68 +616,50 @@ class HoleSectionForm(QWidget):
         self.edt_mob_to_release.setReadOnly(True)
         self.edt_mob_to_release.setPlaceholderText("Auto")
 
-        self.edt_total_brt = DecimalLineEdit()
-        self.edt_total_brt.setPlaceholderText("e.g., 0, 180, 212.45, 370.5")
-
-        self.edt_eff_drilling = QLineEdit()
-        self.edt_eff_drilling.setReadOnly(True)
-        self.edt_eff_drilling.setPlaceholderText("Auto")
-
         form.addRow("CALL OUT DATE", self.dp_call_out_date)
         form.addRow("CREW MOB TIME", self.edt_crew_mob_time)
-        form.addRow("STANDBY TIME (HRS)", self.edt_standby)
-        form.addRow("R/U TIME (HRS)", self.edt_ru)
-        form.addRow("TRIPPING TIME (HRS)", self.edt_tripping)
-        form.addRow("CIRCULATION TIME (HRS)", self.edt_circulation)
-
-        form.addRow("ROTARY TIME (HRS)", self.edt_rotary_time)
-        form.addRow("ROTARY (METER)", self.edt_rotary_m)
-        form.addRow("SLIDING TIME (HRS)", self.edt_sliding_time)
-        form.addRow("SLIDING (METER)", self.edt_sliding_m)
-
-        form.addRow("TOTAL DRILLING TIME (HRS)", self.edt_total_drilling_time)
-        form.addRow("TOTAL DRILLING (METER)", self.edt_total_drilling_m)
-
-        form.addRow("NPT DUE TO RIG (HRS)", self.edt_npt_rig)
-        form.addRow("NPT DUE TO MOTOR (HRS)", self.edt_npt_motor)
-        form.addRow("NPT DUE TO MWD (HRS)", self.edt_npt_mwd)
-
         form.addRow("RELEASE DATE", self.dp_release_date)
         form.addRow("RELEASE TIME", self.edt_release_time)
         form.addRow("MOB TO RELEASE (HRS)", self.edt_mob_to_release)
 
-        form.addRow("TOTAL BRT (HRS)", self.edt_total_brt)
-        form.addRow("%EFF DRILLING", self.edt_eff_drilling)
+        layout.addLayout(form)
 
         return box
 
     # ------------------------------------------------------------------
     # Nozzles dialog
     # ------------------------------------------------------------------
-    def _on_nozzle_clicked(self, _event) -> None:
-        dlg = NozzleDialog(initial_nozzles=self._nozzles, parent=self)
+    def _on_nozzle_clicked(self, bit_index: int, _event) -> None:
+        current = self._bit_nozzles.get(bit_index, [])
+        dlg = NozzleDialog(initial_nozzles=current, parent=self)
         if dlg.exec() == QDialog.Accepted:
             res = dlg.get_result()
             if res is not None:
-                self._nozzles = list(res.nozzles)
-                self._sync_nozzle_fields()
+                self._bit_nozzles[bit_index] = list(res.nozzles)
+                self._sync_nozzle_fields(bit_index)
                 self._recompute_derived()
 
-    def _sync_nozzle_fields(self) -> None:
-        if self.edt_nozzle_summary is None or self.edt_tfa_in2 is None:
+    def _sync_nozzle_fields(self, bit_index: int) -> None:
+        widgets = self._bit_widgets.get(bit_index)
+        if not widgets:
+            return
+        edt_nozzle_summary = widgets.get("edt_nozzle_summary")
+        edt_tfa_in2 = widgets.get("edt_tfa_in2")
+        if not isinstance(edt_nozzle_summary, QLineEdit) or not isinstance(edt_tfa_in2, QLineEdit):
             return
 
-        if not self._nozzles:
-            self.edt_nozzle_summary.setText("")
-            self.edt_tfa_in2.setText("")
+        nozzles = self._bit_nozzles.get(bit_index, [])
+        if not nozzles:
+            edt_nozzle_summary.setText("")
+            edt_tfa_in2.setText("")
             return
 
-        self.edt_nozzle_summary.setText(nozzle_summary(self._nozzles))
+        edt_nozzle_summary.setText(nozzle_summary(nozzles))
         try:
-            tfa = tfa_from_nozzles(self._nozzles)
-            self.edt_tfa_in2.setText(f"{tfa:.4f}")
+            tfa = tfa_from_nozzles(nozzles)
+            edt_tfa_in2.setText(f"{tfa:.4f}")
         except Exception:
-            self.edt_tfa_in2.setText("")
+            edt_tfa_in2.setText("")
 
     # ------------------------------------------------------------------
     # Live calculations
@@ -652,13 +671,9 @@ class HoleSectionForm(QWidget):
             if sig is not None:
                 sig.connect(self._recompute_derived)
 
-        # decimal edits
-        for w in (
-            self.edt_rotary_time, self.edt_sliding_time,
-            self.edt_rotary_m, self.edt_sliding_m,
-            self.edt_total_brt,
-        ):
-            if w is not None:
+        # decimal edits (runs)
+        for fields in self._ta_inputs.values():
+            for w in fields.values():
                 hook(w, "normalized")
 
         # time edits
@@ -693,36 +708,99 @@ class HoleSectionForm(QWidget):
 
             le.textEdited.connect(_on_text_edited)
 
+        for bit_index in (1, 2):
+            widgets = self._bit_widgets.get(bit_index, {})
+            for key in ("edt_type", "edt_iadc", "edt_serial"):
+                le = widgets.get(key)
+                if isinstance(le, QLineEdit):
+                    normalize_line_edit(le)
+
         for le in (
-            self.edt_bit_type,
-            self.edt_bit_iadc,
-            self.edt_bit_serial,
-            self.edt_day_dd,
-            self.edt_night_dd,
-            self.edt_day_mwd,
-            self.edt_night_mwd,
             self.edt_info_section_tvd,
             self.edt_info_section_md,
         ):
             normalize_line_edit(le)
 
-    def _recompute_derived(self) -> None:
-        # TOTAL DRILLING TIME / METERS
-        if self.edt_rotary_time and self.edt_sliding_time and self.edt_total_drilling_time:
-            rt = self.edt_rotary_time.value_or_none()
-            st = self.edt_sliding_time.value_or_none()
-            if rt is not None and st is not None:
-                self.edt_total_drilling_time.setText(f"{total_drilling_time_hours(rt, st):.2f}")
-            else:
-                self.edt_total_drilling_time.setText("")
+        for le in (
+            self.edt_day_dd
+            + self.edt_night_dd
+            + self.edt_day_mwd
+            + self.edt_night_mwd
+        ):
+            normalize_line_edit(le)
 
-        if self.edt_rotary_m and self.edt_sliding_m and self.edt_total_drilling_m:
-            rm = self.edt_rotary_m.value_or_none()
-            sm = self.edt_sliding_m.value_or_none()
-            if rm is not None and sm is not None:
-                self.edt_total_drilling_m.setText(f"{total_drilling_meters(rm, sm):.2f}")
+    def _recompute_derived(self) -> None:
+        def run_value(key: str, run: int) -> Optional[float]:
+            field = self._ta_inputs.get(key, {}).get(run)
+            return field.value_or_none() if field else None
+
+        def set_run_auto(key: str, run: int, value: Optional[float]) -> None:
+            widget = self._ta_auto_runs.get(key, {}).get(run)
+            if not widget:
+                return
+            widget.setText(f"{value:.2f}" if value is not None else "")
+
+        def set_total(key: str, value: Optional[float]) -> None:
+            widget = self._ta_totals.get(key) or self._ta_auto_totals.get(key)
+            if not widget:
+                return
+            widget.setText(f"{value:.2f}" if value is not None else "")
+
+        run_totals_time: Dict[int, Optional[float]] = {}
+        run_totals_m: Dict[int, Optional[float]] = {}
+
+        for run in (1, 2, 3):
+            rt = run_value("ta_rotary_time_hrs", run)
+            st = run_value("ta_sliding_time_hrs", run)
+            if rt is not None and st is not None:
+                run_totals_time[run] = total_drilling_time_hours(rt, st)
             else:
-                self.edt_total_drilling_m.setText("")
+                run_totals_time[run] = None
+            set_run_auto("ta_total_drilling_time_hrs", run, run_totals_time[run])
+
+            rm = run_value("ta_rotary_meters", run)
+            sm = run_value("ta_sliding_meters", run)
+            if rm is not None and sm is not None:
+                run_totals_m[run] = total_drilling_meters(rm, sm)
+            else:
+                run_totals_m[run] = None
+            set_run_auto("ta_total_drilling_meters", run, run_totals_m[run])
+
+        total_time = sum(v for v in run_totals_time.values() if v is not None) if any(
+            v is not None for v in run_totals_time.values()
+        ) else None
+        total_m = sum(v for v in run_totals_m.values() if v is not None) if any(
+            v is not None for v in run_totals_m.values()
+        ) else None
+        set_total("ta_total_drilling_time_hrs", total_time)
+        set_total("ta_total_drilling_meters", total_m)
+
+        # Section totals for editable rows
+        for key, runs in self._ta_inputs.items():
+            values = [runs[r].value_or_none() for r in (1, 2, 3) if runs.get(r)]
+            if any(v is not None for v in values):
+                total = sum(v for v in values if v is not None)
+            else:
+                total = None
+            set_total(key, total)
+
+        # %EFF DRILLING (per run + total)
+        for run in (1, 2, 3):
+            brt = run_value("ta_brt_hrs", run)
+            dt = run_totals_time.get(run)
+            if dt is not None and brt is not None and brt > 0:
+                set_run_auto("ta_eff_drilling_pct", run, eff_drilling_percent(dt, brt))
+            else:
+                set_run_auto("ta_eff_drilling_pct", run, None)
+
+        brt_total = sum(
+            v for v in [run_value("ta_brt_hrs", 1), run_value("ta_brt_hrs", 2), run_value("ta_brt_hrs", 3)]
+            if v is not None
+        )
+        if total_time is not None and brt_total > 0:
+            set_total("ta_eff_drilling_pct", eff_drilling_percent(total_time, brt_total))
+        else:
+            set_total("ta_eff_drilling_pct", None)
 
         # MOB TO RELEASE
         if self.dp_call_out_date and self.edt_crew_mob_time and self.dp_release_date and self.edt_release_time and self.edt_mob_to_release:
@@ -738,18 +816,6 @@ class HoleSectionForm(QWidget):
                     self.edt_mob_to_release.setText("")
             else:
                 self.edt_mob_to_release.setText("")
-
-        # %EFF DRILLING
-        if self.edt_eff_drilling and self.edt_total_brt and self.edt_total_drilling_time:
-            brt = self.edt_total_brt.value_or_none()
-            try:
-                dt = float(self.edt_total_drilling_time.text().strip()) if self.edt_total_drilling_time.text().strip() else 0.0
-            except Exception:
-                dt = 0.0
-            if brt is None:
-                self.edt_eff_drilling.setText("")
-            else:
-                self.edt_eff_drilling.setText(f"{eff_drilling_percent(dt, brt):.2f}")
 
     # ------------------------------------------------------------------
     # Data collection + validation
@@ -779,27 +845,60 @@ class HoleSectionForm(QWidget):
         data.update(ticket_prices)
 
         # MUD MOTOR (rules keys)
-        data["mud_motor_brand"] = combo_value(self.cmb_mud_brand)
-        data["mud_motor_size"] = combo_value(self.cmb_mud_size)
-        data["mud_motor_sleeve_stb_gauge_in"] = self.edt_sleeve_gauge.text().strip() if self.edt_sleeve_gauge else ""
-        data["mud_motor_bend_angle_deg"] = combo_value(self.cmb_bend_angle)
-        data["mud_motor_lobe"] = combo_value(self.cmb_lobe)
-        data["mud_motor_stage"] = combo_value(self.cmb_stage)
-        data["mud_motor_ibs_gauge_in"] = self.edt_ibs_gauge.text().strip() if self.edt_ibs_gauge else ""
+        for motor_index in (1, 2):
+            widgets = self._mud_motor_widgets.get(motor_index, {})
+            cmb_brand = widgets.get("cmb_brand")
+            cmb_size = widgets.get("cmb_size")
+            edt_sleeve = widgets.get("edt_sleeve")
+            cmb_bend = widgets.get("cmb_bend")
+            cmb_lobe = widgets.get("cmb_lobe")
+            cmb_stage = widgets.get("cmb_stage")
+            edt_ibs = widgets.get("edt_ibs")
 
-        # BIT
-        data["bit_brand"] = combo_value(self.cmb_bit_brand)
-        data["bit_kind"] = combo_value(self.cmb_bit_kind)
-        data["bit_type"] = self.edt_bit_type.text().strip() if self.edt_bit_type else ""
-        data["bit_iadc"] = self.edt_bit_iadc.text().strip() if self.edt_bit_iadc else ""
-        data["bit_serial"] = self.edt_bit_serial.text().strip() if self.edt_bit_serial else ""
-        data["bit_nozzles"] = list(self._nozzles)
+            data[f"mud_motor{motor_index}_brand"] = combo_value(cmb_brand) if isinstance(cmb_brand, QComboBox) else ""
+            data[f"mud_motor{motor_index}_size"] = combo_value(cmb_size) if isinstance(cmb_size, QComboBox) else ""
+            data[f"mud_motor{motor_index}_sleeve_stb_gauge_in"] = (
+                edt_sleeve.text().strip() if isinstance(edt_sleeve, QLineEdit) else ""
+            )
+            data[f"mud_motor{motor_index}_bend_angle_deg"] = combo_value(cmb_bend) if isinstance(cmb_bend, QComboBox) else ""
+            data[f"mud_motor{motor_index}_lobe"] = combo_value(cmb_lobe) if isinstance(cmb_lobe, QComboBox) else ""
+            data[f"mud_motor{motor_index}_stage"] = combo_value(cmb_stage) if isinstance(cmb_stage, QComboBox) else ""
+            data[f"mud_motor{motor_index}_ibs_gauge_in"] = (
+                edt_ibs.text().strip() if isinstance(edt_ibs, QLineEdit) else ""
+            )
+
+        # BIT 1 / BIT 2
+        for bit_index in (1, 2):
+            widgets = self._bit_widgets.get(bit_index, {})
+            cmb_brand = widgets.get("cmb_brand")
+            cmb_kind = widgets.get("cmb_kind")
+            edt_type = widgets.get("edt_type")
+            edt_iadc = widgets.get("edt_iadc")
+            edt_serial = widgets.get("edt_serial")
+
+            data[f"bit{bit_index}_brand"] = combo_value(cmb_brand) if isinstance(cmb_brand, QComboBox) else ""
+            data[f"bit{bit_index}_kind"] = combo_value(cmb_kind) if isinstance(cmb_kind, QComboBox) else ""
+            data[f"bit{bit_index}_type"] = (
+                edt_type.text().strip() if isinstance(edt_type, QLineEdit) else ""
+            )
+            data[f"bit{bit_index}_iadc"] = (
+                edt_iadc.text().strip() if isinstance(edt_iadc, QLineEdit) else ""
+            )
+            data[f"bit{bit_index}_serial"] = (
+                edt_serial.text().strip() if isinstance(edt_serial, QLineEdit) else ""
+            )
+            data[f"bit{bit_index}_nozzles"] = list(self._bit_nozzles.get(bit_index, []))
 
         # PERSONNEL
-        data["personnel_day_dd"] = self.edt_day_dd.text().strip() if self.edt_day_dd else ""
-        data["personnel_night_dd"] = self.edt_night_dd.text().strip() if self.edt_night_dd else ""
-        data["personnel_day_mwd"] = self.edt_day_mwd.text().strip() if self.edt_day_mwd else ""
-        data["personnel_night_mwd"] = self.edt_night_mwd.text().strip() if self.edt_night_mwd else ""
+        def collect_personnel(prefix: str, items: List[QLineEdit]) -> None:
+            for idx, le in enumerate(items, start=1):
+                key = f"{prefix}_{idx}"
+                data[key] = le.text().strip()
+
+        collect_personnel("personnel_day_dd", self.edt_day_dd)
+        collect_personnel("personnel_night_dd", self.edt_night_dd)
+        collect_personnel("personnel_day_mwd", self.edt_day_mwd)
+        collect_personnel("personnel_night_mwd", self.edt_night_mwd)
 
         # INFO
         data["info_casing_shoe"] = self.edt_info_casing_shoe.text().strip() if self.edt_info_casing_shoe else ""
@@ -815,6 +914,9 @@ class HoleSectionForm(QWidget):
                 cid = ""
         else:
             cid = ""
+        if od == "OPEN HOLE" and cid == "OPEN HOLE" and self.edt_info_casing_shoe:
+            self.edt_info_casing_shoe.setText("0")
+            data["info_casing_shoe"] = "0"
         data["info_casing_od"] = od
         data["info_casing_id"] = cid
         data["info_section_tvd"] = self.edt_info_section_tvd.text().strip() if self.edt_info_section_tvd else ""
@@ -831,24 +933,12 @@ class HoleSectionForm(QWidget):
         data["ta_call_out_date"] = self.dp_call_out_date.date_value() if self.dp_call_out_date else None
         data["ta_crew_mob_time"] = self.edt_crew_mob_time.text().strip() if self.edt_crew_mob_time else ""
 
-        data["ta_standby_time_hrs"] = self.edt_standby.text().strip() if self.edt_standby else ""
-        data["ta_ru_time_hrs"] = self.edt_ru.text().strip() if self.edt_ru else ""
-        data["ta_tripping_time_hrs"] = self.edt_tripping.text().strip() if self.edt_tripping else ""
-        data["ta_circulation_time_hrs"] = self.edt_circulation.text().strip() if self.edt_circulation else ""
-
-        data["ta_rotary_time_hrs"] = self.edt_rotary_time.text().strip() if self.edt_rotary_time else ""
-        data["ta_rotary_meters"] = self.edt_rotary_m.text().strip() if self.edt_rotary_m else ""
-        data["ta_sliding_time_hrs"] = self.edt_sliding_time.text().strip() if self.edt_sliding_time else ""
-        data["ta_sliding_meters"] = self.edt_sliding_m.text().strip() if self.edt_sliding_m else ""
-
-        data["ta_npt_due_to_rig_hrs"] = self.edt_npt_rig.text().strip() if self.edt_npt_rig else ""
-        data["ta_npt_due_to_motor_hrs"] = self.edt_npt_motor.text().strip() if self.edt_npt_motor else ""
-        data["ta_npt_due_to_mwd_hrs"] = self.edt_npt_mwd.text().strip() if self.edt_npt_mwd else ""
+        for key, runs in self._ta_inputs.items():
+            for run, widget in runs.items():
+                data[f"{key}_run{run}"] = widget.text().strip()
 
         data["ta_release_date"] = self.dp_release_date.date_value() if self.dp_release_date else None
         data["ta_release_time"] = self.edt_release_time.text().strip() if self.edt_release_time else ""
-
-        data["ta_total_brt_hrs"] = self.edt_total_brt.text().strip() if self.edt_total_brt else ""
 
         return data
 
@@ -859,25 +949,54 @@ class HoleSectionForm(QWidget):
         if self.edt_release_time and computed.get("ta_release_time_norm"):
             self.edt_release_time.setText(str(computed["ta_release_time_norm"]))
 
-        # totals
-        if self.edt_total_drilling_time and computed.get("ta_total_drilling_time_hrs") is not None:
-            self.edt_total_drilling_time.setText(f"{float(computed['ta_total_drilling_time_hrs']):.2f}")
-        if self.edt_total_drilling_m and computed.get("ta_total_drilling_meters") is not None:
-            self.edt_total_drilling_m.setText(f"{float(computed['ta_total_drilling_meters']):.2f}")
+        # totals (run + section)
+        for run in (1, 2, 3):
+            tdt_key = f"ta_total_drilling_time_hrs_run{run}"
+            tdm_key = f"ta_total_drilling_meters_run{run}"
+            eff_key = f"ta_eff_drilling_pct_run{run}"
+            if tdt_key in computed:
+                widget = self._ta_auto_runs.get("ta_total_drilling_time_hrs", {}).get(run)
+                if widget:
+                    v = computed.get(tdt_key)
+                    widget.setText(f"{float(v):.2f}" if v is not None else "")
+            if tdm_key in computed:
+                widget = self._ta_auto_runs.get("ta_total_drilling_meters", {}).get(run)
+                if widget:
+                    v = computed.get(tdm_key)
+                    widget.setText(f"{float(v):.2f}" if v is not None else "")
+            if eff_key in computed:
+                widget = self._ta_auto_runs.get("ta_eff_drilling_pct", {}).get(run)
+                if widget:
+                    v = computed.get(eff_key)
+                    widget.setText(f"{float(v):.2f}" if v is not None else "")
+
+        total_time = computed.get("ta_total_drilling_time_hrs_total")
+        total_m = computed.get("ta_total_drilling_meters_total")
+        total_eff = computed.get("ta_eff_drilling_pct_total")
+        if "ta_total_drilling_time_hrs" in self._ta_auto_totals:
+            widget = self._ta_auto_totals.get("ta_total_drilling_time_hrs")
+            if widget:
+                widget.setText(f"{float(total_time):.2f}" if total_time is not None else "")
+        if "ta_total_drilling_meters" in self._ta_auto_totals:
+            widget = self._ta_auto_totals.get("ta_total_drilling_meters")
+            if widget:
+                widget.setText(f"{float(total_m):.2f}" if total_m is not None else "")
+        if "ta_eff_drilling_pct" in self._ta_auto_totals:
+            widget = self._ta_auto_totals.get("ta_eff_drilling_pct")
+            if widget:
+                widget.setText(f"{float(total_eff):.2f}" if total_eff is not None else "")
 
         # mob to release (hard required)
         if self.edt_mob_to_release:
             v = computed.get("ta_mob_to_release_hrs")
             self.edt_mob_to_release.setText(f"{float(v):.2f}" if v is not None else "")
 
-        # eff drilling
-        if self.edt_eff_drilling and computed.get("ta_eff_drilling_pct") is not None:
-            self.edt_eff_drilling.setText(f"{float(computed['ta_eff_drilling_pct']):.2f}")
-
         # nozzle summary / tfa
-        if computed.get("bit_nozzles") is not None:
-            self._nozzles = list(computed["bit_nozzles"])
-            self._sync_nozzle_fields()
+        for bit_index in (1, 2):
+            key = f"bit{bit_index}_nozzles"
+            if computed.get(key) is not None:
+                self._bit_nozzles[bit_index] = list(computed[key])
+                self._sync_nozzle_fields(bit_index)
 
     # ------------------------------------------------------------------
     # Actions
@@ -968,26 +1087,62 @@ class HoleSectionForm(QWidget):
             return
 
         # MUD MOTOR
-        self._set_combo_value(self.cmb_mud_brand, row.get("mud_motor_brand"))
-        self._set_combo_value(self.cmb_mud_size, row.get("mud_motor_size"))
-        self._set_decimal_text(self.edt_sleeve_gauge, row.get("mud_motor_sleeve_stb_gauge_in"))
-        self._set_combo_value(self.cmb_bend_angle, row.get("mud_motor_bend_angle_deg"))
-        self._set_combo_value(self.cmb_lobe, row.get("mud_motor_lobe"))
-        self._set_combo_value(self.cmb_stage, row.get("mud_motor_stage"))
-        self._set_decimal_text(self.edt_ibs_gauge, row.get("mud_motor_ibs_gauge_in"))
+        mm1 = {
+            "brand": row.get("mud_motor1_brand") or row.get("mud_motor_brand"),
+            "size": row.get("mud_motor1_size") or row.get("mud_motor_size"),
+            "sleeve": row.get("mud_motor1_sleeve_stb_gauge_in") or row.get("mud_motor_sleeve_stb_gauge_in"),
+            "bend": row.get("mud_motor1_bend_angle_deg") or row.get("mud_motor_bend_angle_deg"),
+            "lobe": row.get("mud_motor1_lobe") or row.get("mud_motor_lobe"),
+            "stage": row.get("mud_motor1_stage") or row.get("mud_motor_stage"),
+            "ibs": row.get("mud_motor1_ibs_gauge_in") or row.get("mud_motor_ibs_gauge_in"),
+        }
+        mm2 = {
+            "brand": row.get("mud_motor2_brand"),
+            "size": row.get("mud_motor2_size"),
+            "sleeve": row.get("mud_motor2_sleeve_stb_gauge_in"),
+            "bend": row.get("mud_motor2_bend_angle_deg"),
+            "lobe": row.get("mud_motor2_lobe"),
+            "stage": row.get("mud_motor2_stage"),
+            "ibs": row.get("mud_motor2_ibs_gauge_in"),
+        }
+        for motor_index, values in ((1, mm1), (2, mm2)):
+            widgets = self._mud_motor_widgets.get(motor_index, {})
+            self._set_combo_value(widgets.get("cmb_brand"), values["brand"])
+            self._set_combo_value(widgets.get("cmb_size"), values["size"])
+            self._set_decimal_text(widgets.get("edt_sleeve"), values["sleeve"])
+            self._set_combo_value(widgets.get("cmb_bend"), values["bend"])
+            self._set_combo_value(widgets.get("cmb_lobe"), values["lobe"])
+            self._set_combo_value(widgets.get("cmb_stage"), values["stage"])
+            self._set_decimal_text(widgets.get("edt_ibs"), values["ibs"])
 
         # BIT
-        self._set_combo_value(self.cmb_bit_brand, row.get("bit_brand"))
-        self._set_combo_value(self.cmb_bit_kind, row.get("bit_kind"))
-        self._set_line_text(self.edt_bit_type, row.get("bit_type"))
-        self._set_line_text(self.edt_bit_iadc, row.get("bit_iadc"))
-        self._set_line_text(self.edt_bit_serial, row.get("bit_serial"))
+        bit1_brand = row.get("bit1_brand") or row.get("bit_brand")
+        bit1_kind = row.get("bit1_kind") or row.get("bit_kind")
+        bit1_type = row.get("bit1_type") or row.get("bit_type")
+        bit1_iadc = row.get("bit1_iadc") or row.get("bit_iadc")
+        bit1_serial = row.get("bit1_serial") or row.get("bit_serial")
+
+        for bit_index, values in (
+            (1, (bit1_brand, bit1_kind, bit1_type, bit1_iadc, bit1_serial)),
+            (2, (row.get("bit2_brand"), row.get("bit2_kind"), row.get("bit2_type"), row.get("bit2_iadc"), row.get("bit2_serial"))),
+        ):
+            widgets = self._bit_widgets.get(bit_index, {})
+            self._set_combo_value(widgets.get("cmb_brand"), values[0])
+            self._set_combo_value(widgets.get("cmb_kind"), values[1])
+            self._set_line_text(widgets.get("edt_type"), values[2])
+            self._set_line_text(widgets.get("edt_iadc"), values[3])
+            self._set_line_text(widgets.get("edt_serial"), values[4])
 
         # PERSONNEL
-        self._set_line_text(self.edt_day_dd, row.get("personnel_day_dd"))
-        self._set_line_text(self.edt_night_dd, row.get("personnel_night_dd"))
-        self._set_line_text(self.edt_day_mwd, row.get("personnel_day_mwd"))
-        self._set_line_text(self.edt_night_mwd, row.get("personnel_night_mwd"))
+        def load_personnel(prefix: str, items: List[QLineEdit]) -> None:
+            for idx, le in enumerate(items, start=1):
+                key = f"{prefix}_{idx}"
+                self._set_line_text(le, row.get(key))
+
+        load_personnel("personnel_day_dd", self.edt_day_dd)
+        load_personnel("personnel_night_dd", self.edt_night_dd)
+        load_personnel("personnel_day_mwd", self.edt_day_mwd)
+        load_personnel("personnel_night_mwd", self.edt_night_mwd)
 
         # INFO
         self._set_decimal_text(self.edt_info_casing_shoe, row.get("info_casing_shoe"))
@@ -1015,22 +1170,36 @@ class HoleSectionForm(QWidget):
             self.dp_call_out_date.set_date(self._parse_date(row.get("ta_call_out_date")))
         if self.edt_crew_mob_time:
             self.edt_crew_mob_time.setText(str(row.get("ta_crew_mob_time") or ""))
-        self._set_decimal_text(self.edt_standby, row.get("ta_standby_time_hrs"))
-        self._set_decimal_text(self.edt_ru, row.get("ta_ru_time_hrs"))
-        self._set_decimal_text(self.edt_tripping, row.get("ta_tripping_time_hrs"))
-        self._set_decimal_text(self.edt_circulation, row.get("ta_circulation_time_hrs"))
-        self._set_decimal_text(self.edt_rotary_time, row.get("ta_rotary_time_hrs"))
-        self._set_decimal_text(self.edt_rotary_m, row.get("ta_rotary_meters"))
-        self._set_decimal_text(self.edt_sliding_time, row.get("ta_sliding_time_hrs"))
-        self._set_decimal_text(self.edt_sliding_m, row.get("ta_sliding_meters"))
-        self._set_decimal_text(self.edt_npt_rig, row.get("ta_npt_due_to_rig_hrs"))
-        self._set_decimal_text(self.edt_npt_motor, row.get("ta_npt_due_to_motor_hrs"))
-        self._set_decimal_text(self.edt_npt_mwd, row.get("ta_npt_due_to_mwd_hrs"))
+
+        legacy_map = {
+            "ta_standby_time_hrs": "ta_standby_time_hrs_run1",
+            "ta_ru_time_hrs": "ta_ru_time_hrs_run1",
+            "ta_tripping_time_hrs": "ta_tripping_time_hrs_run1",
+            "ta_circulation_time_hrs": "ta_circulation_time_hrs_run1",
+            "ta_rotary_time_hrs": "ta_rotary_time_hrs_run1",
+            "ta_rotary_meters": "ta_rotary_meters_run1",
+            "ta_sliding_time_hrs": "ta_sliding_time_hrs_run1",
+            "ta_sliding_meters": "ta_sliding_meters_run1",
+            "ta_npt_due_to_rig_hrs": "ta_npt_due_to_rig_hrs_run1",
+            "ta_npt_due_to_motor_hrs": "ta_npt_due_to_motor_hrs_run1",
+            "ta_npt_due_to_mwd_hrs": "ta_npt_due_to_mwd_hrs_run1",
+            "ta_total_brt_hrs": "ta_brt_hrs_run1",
+        }
+        for legacy_key, run1_key in legacy_map.items():
+            if not row.get(run1_key) and row.get(legacy_key) is not None:
+                row[run1_key] = row.get(legacy_key)
+
+        for key, runs in self._ta_inputs.items():
+            for run, widget in runs.items():
+                value = row.get(f"{key}_run{run}")
+                self._set_decimal_text(widget, value)
+
         if self.dp_release_date:
             self.dp_release_date.set_date(self._parse_date(row.get("ta_release_date")))
         if self.edt_release_time:
             self.edt_release_time.setText(str(row.get("ta_release_time") or ""))
-        self._set_decimal_text(self.edt_total_brt, row.get("ta_total_brt_hrs"))
+
+        self._recompute_derived()
 
         # TICKET ROWS
         for t in row.get("tickets", []):
@@ -1048,9 +1217,13 @@ class HoleSectionForm(QWidget):
                     pass
 
         # NOZZLES
-        nozzles = row.get("nozzles", [])
-        if nozzles:
-            self._nozzles = list(nozzles)
-            self._sync_nozzle_fields()
+        bit1_nozzles = row.get("bit1_nozzles", [])
+        bit2_nozzles = row.get("bit2_nozzles", [])
+        if bit1_nozzles:
+            self._bit_nozzles[1] = list(bit1_nozzles)
+            self._sync_nozzle_fields(1)
+        if bit2_nozzles:
+            self._bit_nozzles[2] = list(bit2_nozzles)
+            self._sync_nozzle_fields(2)
 
         self._recompute_derived()
