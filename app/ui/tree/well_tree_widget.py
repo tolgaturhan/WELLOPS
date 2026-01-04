@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import QAbstractItemView, QMenu, QTreeWidget, QTreeWidgetItem, QWidget, QVBoxLayout
 
 
@@ -27,6 +28,7 @@ class WellTreeWidget(QWidget):
 
     _ROLE_NODE_KEY = Qt.UserRole + 101
     _ROLE_WELL_ID = Qt.UserRole + 102
+    _ROLE_BASE_TEXT = Qt.UserRole + 103
 
     # Locked hole size display labels (must match project decision)
     _HOLE_SIZE_ITEMS = (
@@ -210,7 +212,18 @@ class WellTreeWidget(QWidget):
         for (wid, node_key), item in self._hole_items_by_well.items():
             if wid != well_id:
                 continue
-            item.setDisabled(node_key not in enabled)
+            is_enabled = node_key in enabled
+            item.setDisabled(not is_enabled)
+            base_text = str(item.data(0, self._ROLE_BASE_TEXT) or item.text(0)).lstrip("✓× ").strip()
+            prefix = "✓ " if is_enabled else "× "
+            item.setText(0, f"{prefix}{base_text}")
+            font = item.font(0)
+            font.setBold(True)
+            item.setFont(0, font)
+            if is_enabled:
+                item.setForeground(0, QBrush(QColor(25, 125, 55)))
+            else:
+                item.setForeground(0, QBrush(QColor(200, 0, 0)))
 
     def _set_expanded_recursive(self, item: QTreeWidgetItem, expanded: bool) -> None:
         item.setExpanded(expanded)
@@ -221,6 +234,7 @@ class WellTreeWidget(QWidget):
         item = QTreeWidgetItem([text])
         item.setData(0, self._ROLE_NODE_KEY, node_key)
         item.setData(0, self._ROLE_WELL_ID, str(well_id))
+        item.setData(0, self._ROLE_BASE_TEXT, text)
 
         # UX: emphasize section nodes
         if node_key in {"WELL_IDENTITY", "TRAJECTORY", "HOLE_SECTION"}:

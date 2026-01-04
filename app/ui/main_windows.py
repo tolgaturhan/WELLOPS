@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QMessageBox,
     QMenuBar,
+    QApplication,
 )
 
 
@@ -101,6 +102,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("TPIC WellOps")
         self._settings = QSettings("TPIC", "WellOps")
+        self._current_theme = self._settings.value("ui/theme", "dark")
 
         # In-memory (UI-only) enabled hole sizes per well (KEY MUST BE str / well_id TEXT)
         self._enabled_hole_sizes: Dict[str, Set[str]] = {}
@@ -117,6 +119,7 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentWidget(self._default_page)
 
         self._init_ui()
+        self._apply_theme(self._current_theme)
 
     # ----------------------------------------------------------------------------------
     # UI
@@ -157,6 +160,7 @@ class MainWindow(QMainWindow):
         self.setMenuBar(menubar)
 
         menu_file = menubar.addMenu("File")
+        menu_view = menubar.addMenu("View")
 
         self.act_new_well = QAction("Create New Well", self)
         self.act_new_well.triggered.connect(self._on_create_new_well)
@@ -171,6 +175,58 @@ class MainWindow(QMainWindow):
         self.act_exit = QAction("Exit", self)
         self.act_exit.triggered.connect(self.close)
         menu_file.addAction(self.act_exit)
+
+        self.act_dark_mode = QAction("Dark Mode", self)
+        self.act_dark_mode.triggered.connect(lambda: self._apply_theme("dark"))
+        menu_view.addAction(self.act_dark_mode)
+
+        self.act_light_mode = QAction("Light Mode", self)
+        self.act_light_mode.triggered.connect(lambda: self._apply_theme("light"))
+        menu_view.addAction(self.act_light_mode)
+
+    def _apply_theme(self, theme: str) -> None:
+        app = QApplication.instance()
+        if app is None:
+            return
+        theme = (theme or "dark").lower()
+        if theme == "light":
+            app.setStyleSheet(
+                """
+                QWidget { background-color: #f6f3f2; color: #1f1f1f; }
+                QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+                    background-color: #ffffff; color: #1f1f1f; border: 1px solid #e1d9d7;
+                }
+                QComboBox QAbstractItemView { background-color: #ffffff; color: #1f1f1f; }
+                QGroupBox { border: 1px solid #e1d9d7; margin-top: 10px; }
+                QGroupBox::title { subcontrol-origin: margin; left: 6px; padding: 0 3px 0 3px; }
+                QMenuBar, QMenu { background-color: #f6f3f2; color: #1f1f1f; }
+                QMenu::item:selected { background-color: #efe9e7; }
+                QTreeWidget { background-color: #ffffff; color: #1f1f1f; }
+                QHeaderView::section { background-color: #ffffff; color: #1f1f1f; }
+                QPushButton { background-color: #ffffff; color: #1f1f1f; border: 1px solid #e1d9d7; padding: 4px 8px; }
+                QPushButton:hover { background-color: #f1ecea; }
+                """
+            )
+        else:
+            app.setStyleSheet(
+                """
+                QWidget { background-color: #1f1f1f; color: #e6e6e6; }
+                QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+                    background-color: #2b2b2b; color: #e6e6e6; border: 1px solid #3a3a3a;
+                }
+                QComboBox QAbstractItemView { background-color: #2b2b2b; color: #e6e6e6; }
+                QGroupBox { border: 1px solid #3a3a3a; margin-top: 10px; }
+                QGroupBox::title { subcontrol-origin: margin; left: 6px; padding: 0 3px 0 3px; }
+                QMenuBar, QMenu { background-color: #1f1f1f; color: #e6e6e6; }
+                QMenu::item:selected { background-color: #2d2d2d; }
+                QTreeWidget { background-color: #2b2b2b; color: #e6e6e6; }
+                QHeaderView::section { background-color: #2b2b2b; color: #e6e6e6; }
+                QPushButton { background-color: #2b2b2b; color: #e6e6e6; border: 1px solid #3a3a3a; padding: 4px 8px; }
+                QPushButton:hover { background-color: #333333; }
+                """
+            )
+        self._current_theme = theme
+        self._settings.setValue("ui/theme", theme)
 
     # ----------------------------------------------------------------------------------
     # Wells list
