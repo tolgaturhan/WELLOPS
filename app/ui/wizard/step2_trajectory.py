@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QGroupBox,
     QVBoxLayout,
+    QSizePolicy,
 )
 
 from app.core import rules
@@ -33,7 +34,7 @@ class Step2Trajectory(QWidget):
     - Planned VS (m)
     - Planned Dist to Plan (m)
 
-    ACTUAL (Optional, later)
+    ACTUAL (Optional)
     - Well TVD at TD (m)
     - Well MD at TD (m)
     - Inc at TD (deg)
@@ -51,10 +52,12 @@ class Step2Trajectory(QWidget):
         super().__init__(parent)
         self._well_id: str = str(well_id).strip() if well_id is not None else ""
 
-        root = QVBoxLayout()
-        self.setLayout(root)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(8)
 
         planned_group = QGroupBox("PLANNED (Required)")
+        planned_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         planned_form = QFormLayout()
         planned_group.setLayout(planned_form)
         root.addWidget(planned_group)
@@ -92,7 +95,8 @@ class Step2Trajectory(QWidget):
         self.dist_planned_m.setPlaceholderText("e.g., 1200.0")
         planned_form.addRow("Planned Dist to Plan (m)", self.dist_planned_m)
 
-        actual_group = QGroupBox("ACTUAL (Optional, later)")
+        actual_group = QGroupBox("ACTUAL (Optional)")
+        actual_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         actual_form = QFormLayout()
         actual_group.setLayout(actual_form)
         root.addWidget(actual_group)
@@ -126,11 +130,14 @@ class Step2Trajectory(QWidget):
         self.dist_at_td_m.setPlaceholderText("e.g., 1185.0")
         actual_form.addRow("Dist to Plan at TD (m)", self.dist_at_td_m)
 
-        hint = QLabel("Numeric fields accept digits, dot, and minus only.")
+        hint = QLabel(
+            "- Fields accept digits, dot, and minus only.\n"
+            "- The ACTUAL field is optional. Please return and complete it once the section is finished.\n"
+            )
         hint.setAlignment(Qt.AlignLeft)
         root.addWidget(hint)
 
-        self.btn_validate = QPushButton("Validate Step 2")
+        self.btn_validate = QPushButton("Validate Trajectory")
         self.btn_validate.clicked.connect(self._on_validate_clicked)
 
         self.btn_save = QPushButton("Save")
@@ -141,6 +148,7 @@ class Step2Trajectory(QWidget):
         btn_row.addWidget(self.btn_save)
         btn_row.addStretch(1)
         root.addLayout(btn_row)
+        root.addStretch(1)
 
         # Wire numeric normalization
         numeric_fields = [
@@ -192,7 +200,7 @@ class Step2Trajectory(QWidget):
 
         if result.ok:
             if show_success:
-                QMessageBox.information(self, "Validation", "Step 2 is valid.")
+                QMessageBox.information(self, "Validation", "Trajectory validation passed. The form is ready to be saved.")
             return result
 
         lines = []
@@ -209,7 +217,7 @@ class Step2Trajectory(QWidget):
         return result
 
     def save_to_db(self, *, show_message: bool, emit_signal: bool) -> bool:
-        result = self._validate_step2(show_success=show_message)
+        result = self._validate_step2(show_success=False)
         if not result.ok:
             return False
 
@@ -227,7 +235,7 @@ class Step2Trajectory(QWidget):
         if emit_signal:
             self.step2_saved.emit(self._well_id)
         if show_message:
-            QMessageBox.information(self, "Information", "Step 2 saved.")
+            QMessageBox.information(self, "Information", "Trajectory saved.")
         return True
 
     def set_well_id(self, well_id: str) -> None:

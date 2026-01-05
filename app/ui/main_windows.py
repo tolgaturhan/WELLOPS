@@ -101,6 +101,8 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("TPIC WellOps")
+        self.setMinimumSize(1024, 768)
+        self.resize(1024, 768)
         self._settings = QSettings("TPIC", "WellOps")
         self._current_theme = self._settings.value("ui/theme", "dark")
 
@@ -196,6 +198,29 @@ class MainWindow(QMainWindow):
                 QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
                     background-color: #ffffff; color: #1f1f1f; border: 1px solid #e1d9d7;
                 }
+                QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {
+                    subcontrol-origin: border;
+                    width: 18px;
+                    background-color: #ffffff;
+                    border-left: 1px solid #e1d9d7;
+                }
+                QAbstractSpinBox::up-button {
+                    subcontrol-position: right top;
+                    border-bottom: 1px solid #e1d9d7;
+                }
+                QAbstractSpinBox::down-button {
+                    subcontrol-position: right bottom;
+                }
+                QAbstractSpinBox::up-arrow {
+                    image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'><path d='M3 1h2v2h2v2H5v2H3V5H1V3h2z' fill='%231f1f1f'/></svg>");
+                    width: 8px;
+                    height: 8px;
+                }
+                QAbstractSpinBox::down-arrow {
+                    image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'><rect x='1' y='3' width='6' height='2' fill='%231f1f1f'/></svg>");
+                    width: 8px;
+                    height: 8px;
+                }
                 QComboBox QAbstractItemView { background-color: #ffffff; color: #1f1f1f; }
                 QGroupBox { border: 1px solid #e1d9d7; margin-top: 10px; }
                 QGroupBox::title { subcontrol-origin: margin; left: 6px; padding: 0 3px 0 3px; }
@@ -213,6 +238,29 @@ class MainWindow(QMainWindow):
                 QWidget { background-color: #1f1f1f; color: #e6e6e6; }
                 QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
                     background-color: #2b2b2b; color: #e6e6e6; border: 1px solid #3a3a3a;
+                }
+                QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {
+                    subcontrol-origin: border;
+                    width: 18px;
+                    background-color: #2b2b2b;
+                    border-left: 1px solid #3a3a3a;
+                }
+                QAbstractSpinBox::up-button {
+                    subcontrol-position: right top;
+                    border-bottom: 1px solid #3a3a3a;
+                }
+                QAbstractSpinBox::down-button {
+                    subcontrol-position: right bottom;
+                }
+                QAbstractSpinBox::up-arrow {
+                    image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'><path d='M3 1h2v2h2v2H5v2H3V5H1V3h2z' fill='%23e6e6e6'/></svg>");
+                    width: 8px;
+                    height: 8px;
+                }
+                QAbstractSpinBox::down-arrow {
+                    image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'><rect x='1' y='3' width='6' height='2' fill='%23e6e6e6'/></svg>");
+                    width: 8px;
+                    height: 8px;
                 }
                 QComboBox QAbstractItemView { background-color: #2b2b2b; color: #e6e6e6; }
                 QGroupBox { border: 1px solid #3a3a3a; margin-top: 10px; }
@@ -436,6 +484,7 @@ class MainWindow(QMainWindow):
             return
 
         enabled = set(enabled_set or set())
+        disabled = self._enabled_hole_sizes.get(wid, set()) - enabled
         self._enabled_hole_sizes[wid] = enabled
         try:
             _repo_save_enabled_hole_sizes()(wid, enabled)
@@ -446,8 +495,21 @@ class MainWindow(QMainWindow):
                 f"Failed to save hole section settings.\n\nDetails:\n{e!r}",
             )
             return
+
+        if disabled:
+            try:
+                from app.data.hole_section_data_repo import delete_hole_section  # type: ignore
+                for node_key in disabled:
+                    delete_hole_section(wid, node_key)
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to delete hole section data.\n\nDetails:\n{e!r}",
+                )
+                return
         self.well_tree.set_enabled_hole_sizes(wid, self._enabled_hole_sizes[wid])
-        QMessageBox.information(self, "Information", "Saved.")
+        QMessageBox.information(self, "Information", "Hole Section Program saved.")
 
         # Drop cached widgets for disabled hole sections to avoid stale access.
         for key in list(self._widget_cache.keys()):

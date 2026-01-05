@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QMessageBox,
     QSpinBox,
+    QAbstractSpinBox,
     QHeaderView,
     QWidget,
     QAbstractItemView,
@@ -125,12 +126,14 @@ class NozzleDialog(QDialog):
 
         # COUNT spinner
         sp_count = QSpinBox()
+        sp_count.setButtonSymbols(QAbstractSpinBox.NoButtons)
         sp_count.setMinimum(1)
         sp_count.setMaximum(99)
         sp_count.setValue(int(count))
 
         # SIZE spinner (32nds)
         sp_size = QSpinBox()
+        sp_size.setButtonSymbols(QAbstractSpinBox.NoButtons)
         sp_size.setMinimum(1)
         sp_size.setMaximum(40)  # typical nozzle sizes; adjust later if needed
         sp_size.setValue(int(size_32nds))

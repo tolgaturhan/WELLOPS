@@ -3,8 +3,11 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget,
+    QVBoxLayout,
     QFormLayout,
     QHBoxLayout,
+    QGroupBox,
+    QSizePolicy,
     QLineEdit,
     QComboBox,
     QTextEdit,
@@ -40,8 +43,16 @@ class Step1WellIdentity(QWidget):
         super().__init__(parent)
         self._well_id: str = str(well_id).strip() if well_id is not None else ""
 
-        self.form = QFormLayout()
-        self.setLayout(self.form)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(8)
+        group = QGroupBox("WELL IDENTITY (Required)")
+        group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self.form = QFormLayout(group)
+        self.form.setContentsMargins(12, 12, 12, 12)
+        self.form.setHorizontalSpacing(12)
+        self.form.setVerticalSpacing(8)
+        root.addWidget(group)
 
         # Well Name
         self.well_name = QLineEdit()
@@ -83,6 +94,7 @@ class Step1WellIdentity(QWidget):
         self.well_purpose.model().item(0).setEnabled(False)
         self.well_purpose.setCurrentIndex(0)
         self.well_purpose.addItems(["EXPLORATION", "APPRAISAL", "PRODUCTION", "OTHER"])
+        self.well_purpose.setStyleSheet("QComboBox { padding-left: 6px; }")
         self.form.addRow("Well Purpose", self.well_purpose)
 
         # Well Type
@@ -91,6 +103,7 @@ class Step1WellIdentity(QWidget):
         self.well_type.model().item(0).setEnabled(False)
         self.well_type.setCurrentIndex(0)
         self.well_type.addItems(["OIL", "GAS", "GEOTHERMAL", "CARBON_DIOXIDE", "OTHER"])
+        self.well_type.setStyleSheet("QComboBox { padding-left: 6px; }")
         self.form.addRow("Well Type", self.well_type)
 
         # DD Well Type
@@ -99,6 +112,7 @@ class Step1WellIdentity(QWidget):
         self.dd_well_type.model().item(0).setEnabled(False)
         self.dd_well_type.setCurrentIndex(0)
         self.dd_well_type.addItems(["VERTICAL", "J-TYPE", "S-TYPE", "SIDE-TRACK", "HORIZONTAL"])
+        self.dd_well_type.setStyleSheet("QComboBox { padding-left: 6px; }")
         self.form.addRow("DD Well Type", self.dd_well_type)
 
         # Province (editable combo)
@@ -115,7 +129,7 @@ class Step1WellIdentity(QWidget):
         "BITLIS",
         "EDIRNE",
         "ELAZIG",
-        "HGAZIANTEP",
+        "GAZIANTEP",
         "HAKKARI",
         "ISTANBUL",
         "KAHRAMANMARAS",
@@ -199,11 +213,14 @@ class Step1WellIdentity(QWidget):
         self.form.addRow("Notes", self.notes)
 
         # Small hint label
-        hint = QLabel("All inputs are normalized to ASCII-only uppercase.")
+        hint = QLabel(
+        "- All inputs are normalized to ASCII-only uppercase.\n"
+        "- The Field Name is auto-generated based on the entered Well Name.\n"
+        )
         hint.setAlignment(Qt.AlignLeft)
-        self.form.addRow("", hint)
+        root.addWidget(hint)
 
-        self.btn_validate = QPushButton("Validate Step 1")
+        self.btn_validate = QPushButton("Validate Well Identity")
         self.btn_validate.clicked.connect(self._on_validate_clicked)
 
         self.btn_save = QPushButton("Save")
@@ -216,7 +233,8 @@ class Step1WellIdentity(QWidget):
         btn_layout.addWidget(self.btn_validate)
         btn_layout.addWidget(self.btn_save)
         btn_layout.addStretch(1)
-        self.form.addRow("", btn_row)
+        root.addWidget(btn_row)
+        root.addStretch(1)
 
         # Wire events
         self.well_name.textChanged.connect(self._on_well_name_changed)
@@ -277,7 +295,7 @@ class Step1WellIdentity(QWidget):
 
         if result.ok:
             if show_success:
-                QMessageBox.information(self, "Validation", "Step 1 is valid.")
+                QMessageBox.information(self, "Validation", "Well Identity validation passed. The form is ready to be saved.")
             return result
 
         lines = []
@@ -294,7 +312,7 @@ class Step1WellIdentity(QWidget):
         return result
 
     def save_to_db(self, *, show_message: bool, emit_signal: bool) -> bool:
-        result = self._validate_step1(show_success=show_message)
+        result = self._validate_step1(show_success=False)
         if not result.ok:
             return False
 
@@ -338,7 +356,7 @@ class Step1WellIdentity(QWidget):
         if emit_signal:
             self.step1_saved.emit(self._well_id)
         if show_message:
-            QMessageBox.information(self, "Information", "Step 1 saved.")
+            QMessageBox.information(self, "Information", "Well Identity saved.")
         return True
 
     def set_well_id(self, well_id: str) -> None:

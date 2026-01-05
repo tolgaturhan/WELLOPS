@@ -689,14 +689,24 @@ def validate_hole_section(section_data: Dict[str, Any]) -> HoleSectionValidation
     for run in (1, 2, 3):
         brt = run_values[run].get("ta_brt_hrs")
         tdt = total_drilling_time_runs[run]
-        if tdt is not None and brt is not None and brt > 0:
-            computed[f"ta_eff_drilling_pct_run{run}"] = eff_drilling_percent(float(tdt), float(brt))
+        if tdt is not None and brt is not None:
+            if brt == 0 and tdt == 0:
+                computed[f"ta_eff_drilling_pct_run{run}"] = 0.0
+            elif brt > 0:
+                computed[f"ta_eff_drilling_pct_run{run}"] = eff_drilling_percent(float(tdt), float(brt))
+            else:
+                computed[f"ta_eff_drilling_pct_run{run}"] = None
         else:
             computed[f"ta_eff_drilling_pct_run{run}"] = None
 
     brt_total = sum(v for v in (run_values[1].get("ta_brt_hrs"), run_values[2].get("ta_brt_hrs"), run_values[3].get("ta_brt_hrs")) if v is not None)
-    if total_drilling_time_total is not None and brt_total > 0:
-        computed["ta_eff_drilling_pct_total"] = eff_drilling_percent(float(total_drilling_time_total), float(brt_total))
+    if total_drilling_time_total is not None:
+        if brt_total == 0 and total_drilling_time_total == 0:
+            computed["ta_eff_drilling_pct_total"] = 0.0
+        elif brt_total > 0:
+            computed["ta_eff_drilling_pct_total"] = eff_drilling_percent(float(total_drilling_time_total), float(brt_total))
+        else:
+            computed["ta_eff_drilling_pct_total"] = None
     else:
         computed["ta_eff_drilling_pct_total"] = None
 

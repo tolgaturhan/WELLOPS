@@ -135,6 +135,24 @@ def validate_step2(data: Dict[str, Any]) -> ValidationResult:
     vs_at_td_m = _to_float(data.get("vs_at_td_m"))
     dist_at_td_m = _to_float(data.get("dist_at_td_m"))
 
+    actual_fields = [
+        "tvd_at_td_m",
+        "md_at_td_m",
+        "inc_at_td_deg",
+        "azimuth_at_td_deg",
+        "max_dls_actual_deg_per_30m",
+        "vs_at_td_m",
+        "dist_at_td_m",
+    ]
+
+    def _is_blank(value: Any) -> bool:
+        return value is None or str(value).strip() == ""
+
+    if any(not _is_blank(data.get(f)) for f in actual_fields):
+        for field in actual_fields:
+            if _is_blank(data.get(field)):
+                r.add_field_error(field, f"{FIELD_LABELS.get(field, field)} is required.")
+
     # Numeric validity (actual) - only if provided
     def _optional_number(field: str, val: Optional[float]) -> None:
         if str(data.get(field, "")).strip() != "" and val is None:

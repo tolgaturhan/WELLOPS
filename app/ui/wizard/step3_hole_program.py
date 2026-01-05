@@ -99,7 +99,8 @@ class Step3HoleProgram(QWidget):
 
         # Buttons
         btn_row = QHBoxLayout()
-        btn_row.addStretch(1)
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        btn_row.setAlignment(Qt.AlignLeft)
 
         self.btn_reset = QPushButton("Reset")
         self.btn_reset.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -111,6 +112,7 @@ class Step3HoleProgram(QWidget):
 
         btn_row.addWidget(self.btn_reset)
         btn_row.addWidget(self.btn_apply)
+        btn_row.addStretch(1)
 
         root.addLayout(btn_row)
         root.addStretch(1)
@@ -149,6 +151,22 @@ class Step3HoleProgram(QWidget):
             return
 
         enabled_now = self._current_enabled_set()
+        disabled_now = self._enabled - enabled_now
+        if disabled_now:
+            msg = (
+                "Warning: Disabling this Hole Section will permanently delete all associated data. "
+                "This action cannot be undone. Are you sure you want to proceed?"
+            )
+            res = QMessageBox.question(
+                self,
+                "Confirm Disable",
+                msg,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if res != QMessageBox.Yes:
+                self._apply_initial_state()
+                return
 
         # Update local snapshot
         self._enabled = set(enabled_now)

@@ -690,3 +690,24 @@ def save_hole_section(well_id: str, hole_key: str, data: Dict[str, Any]) -> None
                 for i, n in enumerate(bit2_nozzles)
             ],
         )
+
+
+def delete_hole_section(well_id: str, hole_key: str) -> None:
+    wid = (well_id or "").strip()
+    hkey = (hole_key or "").strip()
+    if not wid or not hkey:
+        return
+
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM well_hse_nozzle WHERE well_id = ? AND hole_key = ?",
+            (wid, hkey),
+        )
+        conn.execute(
+            "DELETE FROM well_hse_ticket WHERE well_id = ? AND hole_key = ?",
+            (wid, hkey),
+        )
+        conn.execute(
+            "DELETE FROM well_hole_section_data WHERE well_id = ? AND hole_key = ?",
+            (wid, hkey),
+        )

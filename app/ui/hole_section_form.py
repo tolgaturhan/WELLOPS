@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QDialog,
+    QAbstractSpinBox,
 )
 
 from app.core.canonical import canonical_text
@@ -193,8 +194,8 @@ class HoleSectionForm(QWidget):
         self.btn_save.clicked.connect(self._on_save_clicked)
 
         btn_row.addWidget(self.btn_validate)
-        btn_row.addStretch(1)
         btn_row.addWidget(self.btn_save)
+        btn_row.addStretch(1)
         root.addLayout(btn_row)
 
     # --------------------------
@@ -232,6 +233,7 @@ class HoleSectionForm(QWidget):
             dp.btn.setToolTip("Select ticket date")
 
             price = QDoubleSpinBox()
+            price.setButtonSymbols(QAbstractSpinBox.NoButtons)
             price.setDecimals(2)
             price.setMinimum(0.00)
             price.setMaximum(999999999.99)
@@ -788,8 +790,13 @@ class HoleSectionForm(QWidget):
         for run in (1, 2, 3):
             brt = run_value("ta_brt_hrs", run)
             dt = run_totals_time.get(run)
-            if dt is not None and brt is not None and brt > 0:
-                set_run_auto("ta_eff_drilling_pct", run, eff_drilling_percent(dt, brt))
+            if dt is not None and brt is not None:
+                if brt == 0 and dt == 0:
+                    set_run_auto("ta_eff_drilling_pct", run, 0.0)
+                elif brt > 0:
+                    set_run_auto("ta_eff_drilling_pct", run, eff_drilling_percent(dt, brt))
+                else:
+                    set_run_auto("ta_eff_drilling_pct", run, None)
             else:
                 set_run_auto("ta_eff_drilling_pct", run, None)
 
@@ -797,8 +804,13 @@ class HoleSectionForm(QWidget):
             v for v in [run_value("ta_brt_hrs", 1), run_value("ta_brt_hrs", 2), run_value("ta_brt_hrs", 3)]
             if v is not None
         )
-        if total_time is not None and brt_total > 0:
-            set_total("ta_eff_drilling_pct", eff_drilling_percent(total_time, brt_total))
+        if total_time is not None:
+            if brt_total == 0 and total_time == 0:
+                set_total("ta_eff_drilling_pct", 0.0)
+            elif brt_total > 0:
+                set_total("ta_eff_drilling_pct", eff_drilling_percent(total_time, brt_total))
+            else:
+                set_total("ta_eff_drilling_pct", None)
         else:
             set_total("ta_eff_drilling_pct", None)
 
@@ -1016,7 +1028,7 @@ class HoleSectionForm(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to save Hole Section.\n\nDetails:\n{e!r}")
             return
 
-        QMessageBox.information(self, "Information", "Saved.")
+        QMessageBox.information(self, "Information", "Hole Section saved.")
 
     def _validate_section(self, *, show_success: bool):
         data = self._collect_section_data()
@@ -1027,7 +1039,7 @@ class HoleSectionForm(QWidget):
 
         if result.ok:
             if show_success:
-                QMessageBox.information(self, "Information", "Validation passed. No issues found.")
+                QMessageBox.information(self, "Information", "Hole Section validation passed. The form is ready to be saved.")
             return result
 
         msg = "Please fix the following issues:\n\n" + "\n".join(f"- {e}" for e in result.errors)
