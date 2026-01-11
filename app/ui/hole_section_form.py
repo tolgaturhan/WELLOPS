@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -54,6 +54,7 @@ from app.ui.dialogs.nozzle_dialog import NozzleDialog
 from app.ui.widgets.decimal_line_edit import DecimalLineEdit
 from app.ui.widgets.time_hhmm_edit import TimeHHMMEdit
 from app.ui.widgets.date_picker_line import DatePickerLine
+from app.ui.dialogs.stabilizer_gauge_converter import StabilizerGaugeConverterDialog
 
 
 @dataclass(frozen=True)
@@ -100,7 +101,7 @@ class HoleSectionForm(QWidget):
         self._ticket_dates: Dict[str, DatePickerLine] = {}
         self._ticket_prices: Dict[str, QDoubleSpinBox] = {}
 
-        self._mud_motor_widgets: Dict[int, Dict[str, QComboBox | DecimalLineEdit]] = {}
+        self._mud_motor_widgets: Dict[int, Dict[str, Union[QComboBox, QLineEdit, DecimalLineEdit]]] = {}
 
         self._bit_widgets: Dict[int, Dict[str, QLineEdit | QComboBox]] = {}
         self._bit_nozzles: Dict[int, List[NozzleLine]] = {1: [], 2: []}
@@ -274,8 +275,13 @@ class HoleSectionForm(QWidget):
         cmb_brand = self._combo_with_placeholder("Select from list", list(MUD_MOTOR_BRANDS))
         cmb_size = self._combo_with_placeholder("Select from list", list(MUD_MOTOR_SIZES))
 
-        edt_sleeve_gauge = DecimalLineEdit()
-        edt_sleeve_gauge.setPlaceholderText("e.g., 12.125")
+        edt_sleeve_gauge = QLineEdit()
+        edt_sleeve_gauge.setReadOnly(True)
+        edt_sleeve_gauge.setPlaceholderText("Click to open stabilizer converter")
+        edt_sleeve_gauge.setCursor(Qt.PointingHandCursor)
+        edt_sleeve_gauge.mousePressEvent = (
+            lambda event, le=edt_sleeve_gauge: self._open_stabilizer_converter(le, event)
+        )  # type: ignore[assignment]
 
         cmb_bend_angle = self._combo_with_placeholder("Select from list", list(BEND_ANGLES_DEG))
 
@@ -292,9 +298,13 @@ class HoleSectionForm(QWidget):
         ls_layout.addWidget(QLabel("STAGE"))
         ls_layout.addWidget(cmb_stage, 1)
 
-        edt_ibs_gauge = DecimalLineEdit()
-        edt_ibs_gauge.setPlaceholderText("e.g., 11.937")
-        edt_ibs_gauge.set_allow_empty(True)
+        edt_ibs_gauge = QLineEdit()
+        edt_ibs_gauge.setReadOnly(True)
+        edt_ibs_gauge.setPlaceholderText("Click to open stabilizer converter")
+        edt_ibs_gauge.setCursor(Qt.PointingHandCursor)
+        edt_ibs_gauge.mousePressEvent = (
+            lambda event, le=edt_ibs_gauge: self._open_stabilizer_converter(le, event)
+        )  # type: ignore[assignment]
 
         form.addRow("BRAND", cmb_brand)
         form.addRow("SIZE", cmb_size)
@@ -640,6 +650,13 @@ class HoleSectionForm(QWidget):
                 self._bit_nozzles[bit_index] = list(res.nozzles)
                 self._sync_nozzle_fields(bit_index)
                 self._recompute_derived()
+
+    def _open_stabilizer_converter(self, target: QLineEdit, _event) -> None:
+        dlg = StabilizerGaugeConverterDialog(parent=self)
+        if dlg.exec() == QDialog.Accepted:
+            value = dlg.result_text()
+            if value is not None:
+                target.setText(value)
 
     def _sync_nozzle_fields(self, bit_index: int) -> None:
         widgets = self._bit_widgets.get(bit_index)
@@ -1097,7 +1114,7 @@ class HoleSectionForm(QWidget):
             return
         widget.setText(s)
 
-    def _set_decimal_text(self, widget: Optional[DecimalLineEdit], value: object) -> None:
+    def _set_decimal_text(self, widget: Optional[QLineEdit], value: object) -> None:
         if widget is None:
             return
         if value is None:

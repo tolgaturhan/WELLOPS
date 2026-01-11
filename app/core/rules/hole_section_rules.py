@@ -281,6 +281,37 @@ def _optional_decimal(value: Any, field_label: str, errors: List[str]) -> Option
         return None
 
 
+def _require_decimal_or_none(
+    value: Any,
+    field_label: str,
+    errors: List[str],
+    *,
+    empty_msg: Optional[str] = None,
+) -> Optional[float]:
+    if _is_blank(value):
+        errors.append(empty_msg or f"{field_label} is required.")
+        return None
+    if _as_str(value).upper() == "NONE":
+        return None
+    try:
+        return parse_decimal(_as_str(value))
+    except ValueError:
+        errors.append(f"{field_label} must be a valid number or NONE.")
+        return None
+
+
+def _optional_decimal_or_none(value: Any, field_label: str, errors: List[str]) -> Optional[float]:
+    if _is_blank(value):
+        return None
+    if _as_str(value).upper() == "NONE":
+        return None
+    try:
+        return parse_decimal(_as_str(value))
+    except ValueError:
+        errors.append(f"{field_label} must be a valid number or NONE.")
+        return None
+
+
 def _require_date(value: Any, field_label: str, errors: List[str], *, empty_msg: Optional[str] = None) -> Optional[date]:
     d = _parse_date(value)
     if d is None:
@@ -380,11 +411,11 @@ def validate_hole_section(section_data: Dict[str, Any]) -> HoleSectionValidation
         computed["mud_motor1_brand"] = _require_choice(mm1_brand_raw, MUD_MOTOR_BRANDS, "MUD MOTOR-1 / BRAND", errors)
         computed["mud_motor1_size"] = _require_choice(mm1_size_raw, MUD_MOTOR_SIZES, "MUD MOTOR-1 / SIZE", errors)
 
-        sleeve = _require_decimal(
+        sleeve = _require_decimal_or_none(
             mm1_sleeve_raw,
             "MUD MOTOR-1 / SLEEVE STB GAUGE (IN)",
             errors,
-            empty_msg='MUD MOTOR-1 / SLEEVE STB GAUGE (IN) is required (e.g., 12.125).',
+            empty_msg='MUD MOTOR-1 / SLEEVE STB GAUGE (IN) is required (e.g., 12.125 or NONE).',
         )
         computed["mud_motor1_sleeve_stb_gauge_in"] = sleeve
 
@@ -398,7 +429,11 @@ def validate_hole_section(section_data: Dict[str, Any]) -> HoleSectionValidation
         computed["mud_motor1_lobe"] = _require_choice(mm1_lobe_raw, LOBE_LIST, "MUD MOTOR-1 / LOBE", errors)
         computed["mud_motor1_stage"] = _require_choice(mm1_stage_raw, STAGE_LIST, "MUD MOTOR-1 / STAGE", errors)
 
-        computed["mud_motor1_ibs_gauge_in"] = _optional_decimal(mm1_ibs_raw, "MUD MOTOR-1 / IBS GAUGE (IN)", errors)
+        computed["mud_motor1_ibs_gauge_in"] = _optional_decimal_or_none(
+            mm1_ibs_raw,
+            "MUD MOTOR-1 / IBS GAUGE (IN)",
+            errors,
+        )
 
     mm2_brand_raw = _as_str(data.get("mud_motor2_brand"))
     mm2_size_raw = _as_str(data.get("mud_motor2_size"))
@@ -415,11 +450,11 @@ def validate_hole_section(section_data: Dict[str, Any]) -> HoleSectionValidation
         computed["mud_motor2_brand"] = _require_choice(mm2_brand_raw, MUD_MOTOR_BRANDS, "MUD MOTOR-2 / BRAND", errors)
         computed["mud_motor2_size"] = _require_choice(mm2_size_raw, MUD_MOTOR_SIZES, "MUD MOTOR-2 / SIZE", errors)
 
-        sleeve2 = _require_decimal(
+        sleeve2 = _require_decimal_or_none(
             mm2_sleeve_raw,
             "MUD MOTOR-2 / SLEEVE STB GAUGE (IN)",
             errors,
-            empty_msg='MUD MOTOR-2 / SLEEVE STB GAUGE (IN) is required (e.g., 12.125).',
+            empty_msg='MUD MOTOR-2 / SLEEVE STB GAUGE (IN) is required (e.g., 12.125 or NONE).',
         )
         computed["mud_motor2_sleeve_stb_gauge_in"] = sleeve2
 
@@ -431,7 +466,11 @@ def validate_hole_section(section_data: Dict[str, Any]) -> HoleSectionValidation
         )
         computed["mud_motor2_lobe"] = _require_choice(mm2_lobe_raw, LOBE_LIST, "MUD MOTOR-2 / LOBE", errors)
         computed["mud_motor2_stage"] = _require_choice(mm2_stage_raw, STAGE_LIST, "MUD MOTOR-2 / STAGE", errors)
-        computed["mud_motor2_ibs_gauge_in"] = _optional_decimal(mm2_ibs_raw, "MUD MOTOR-2 / IBS GAUGE (IN)", errors)
+        computed["mud_motor2_ibs_gauge_in"] = _optional_decimal_or_none(
+            mm2_ibs_raw,
+            "MUD MOTOR-2 / IBS GAUGE (IN)",
+            errors,
+        )
     else:
         computed["mud_motor2_brand"] = ""
         computed["mud_motor2_size"] = ""

@@ -37,13 +37,23 @@ def normalize_hhmm(raw: str) -> str:
         hh = int(hh_str)
         mm = int(mm_str)
     else:
-        # digits-only, must be 3 or 4 digits
-        if not s.isdigit() or len(s) not in (3, 4):
+        # digits-only, support 1-4 digits
+        if not s.isdigit() or len(s) not in (1, 2, 3, 4):
             raise ValueError("Invalid time format.")
-        if len(s) == 3:
-            # e.g. "930" -> 09:30
-            hh = int(s[0:1])
-            mm = int(s[1:3])
+        if len(s) in (1, 2):
+            # e.g. "1" -> 01:00, "01" -> 01:00
+            hh = int(s)
+            mm = 0
+        elif len(s) == 3:
+            # Prefer hour-first for HHO when last digit is 0 and HH is valid (e.g. "010" -> 01:00)
+            hh_candidate = int(s[0:2])
+            if s[2] == "0" and 0 <= hh_candidate <= 24:
+                hh = hh_candidate
+                mm = 0
+            else:
+                # Fallback: "930" -> 09:30
+                hh = int(s[0:1])
+                mm = int(s[1:3])
         else:
             hh = int(s[0:2])
             mm = int(s[2:4])

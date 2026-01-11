@@ -5,7 +5,7 @@ from typing import Optional
 
 from PySide6.QtCore import Qt, Signal, QRegularExpression
 from PySide6.QtGui import QRegularExpressionValidator
-from PySide6.QtWidgets import QLineEdit
+from PySide6.QtWidgets import QLineEdit, QMessageBox
 
 from app.core.hole_section_calcs import normalize_hhmm
 
@@ -49,7 +49,12 @@ class TimeHHMMEdit(QLineEdit):
         try:
             out = normalize_hhmm(raw)
         except Exception:
-            # Keep as-is; rule layer will show the authoritative error message.
+            QMessageBox.warning(
+                self,
+                "Warning",
+                "Please enter the time format as shown in the examples.\n"
+                "Example: 00:25, 07:43, 12:48, 16:37.",
+            )
             self.normalized.emit(raw)
             return
 

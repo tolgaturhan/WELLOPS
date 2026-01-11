@@ -24,6 +24,21 @@ def _to_float(value: Any) -> Optional[float]:
         return None
 
 
+def _to_float_or_none_token(value: Any) -> Optional[float | str]:
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    if s.upper() == "NONE":
+        return "NONE"
+    s = s.replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
 def _to_iso_date(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -131,11 +146,11 @@ def save_hole_section(well_id: str, hole_key: str, data: Dict[str, Any]) -> None
 
     mm1_brand = _txt("mud_motor1_brand") or _txt("mud_motor_brand")
     mm1_size = _txt("mud_motor1_size") or _txt("mud_motor_size")
-    mm1_sleeve = _to_float(_pick("mud_motor1_sleeve_stb_gauge_in", "mud_motor_sleeve_stb_gauge_in"))
+    mm1_sleeve = _to_float_or_none_token(_pick("mud_motor1_sleeve_stb_gauge_in", "mud_motor_sleeve_stb_gauge_in"))
     mm1_bend = _txt("mud_motor1_bend_angle_deg") or _txt("mud_motor_bend_angle_deg")
     mm1_lobe = _txt("mud_motor1_lobe") or _txt("mud_motor_lobe")
     mm1_stage = _txt("mud_motor1_stage") or _txt("mud_motor_stage")
-    mm1_ibs = _to_float(_pick("mud_motor1_ibs_gauge_in", "mud_motor_ibs_gauge_in"))
+    mm1_ibs = _to_float_or_none_token(_pick("mud_motor1_ibs_gauge_in", "mud_motor_ibs_gauge_in"))
 
     payload = {
         "mud_motor1_brand": mm1_brand,
@@ -147,11 +162,11 @@ def save_hole_section(well_id: str, hole_key: str, data: Dict[str, Any]) -> None
         "mud_motor1_ibs_gauge_in": mm1_ibs,
         "mud_motor2_brand": _txt("mud_motor2_brand"),
         "mud_motor2_size": _txt("mud_motor2_size"),
-        "mud_motor2_sleeve_stb_gauge_in": _to_float(data.get("mud_motor2_sleeve_stb_gauge_in")),
+        "mud_motor2_sleeve_stb_gauge_in": _to_float_or_none_token(data.get("mud_motor2_sleeve_stb_gauge_in")),
         "mud_motor2_bend_angle_deg": _txt("mud_motor2_bend_angle_deg"),
         "mud_motor2_lobe": _txt("mud_motor2_lobe"),
         "mud_motor2_stage": _txt("mud_motor2_stage"),
-        "mud_motor2_ibs_gauge_in": _to_float(data.get("mud_motor2_ibs_gauge_in")),
+        "mud_motor2_ibs_gauge_in": _to_float_or_none_token(data.get("mud_motor2_ibs_gauge_in")),
         "mud_motor_brand": mm1_brand,
         "mud_motor_size": mm1_size,
         "mud_motor_sleeve_stb_gauge_in": mm1_sleeve,
