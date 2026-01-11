@@ -148,17 +148,21 @@ CREATE TABLE IF NOT EXISTS well_hole_section_data (
   mud_motor1_brand TEXT NULL,
   mud_motor1_size TEXT NULL,
   mud_motor1_sleeve_stb_gauge_in REAL NULL,
+  mud_motor1_sleeve_none INTEGER NOT NULL DEFAULT 0,
   mud_motor1_bend_angle_deg TEXT NULL,
   mud_motor1_lobe TEXT NULL,
   mud_motor1_stage TEXT NULL,
   mud_motor1_ibs_gauge_in REAL NULL,
+  mud_motor1_ibs_none INTEGER NOT NULL DEFAULT 0,
   mud_motor2_brand TEXT NULL,
   mud_motor2_size TEXT NULL,
   mud_motor2_sleeve_stb_gauge_in REAL NULL,
+  mud_motor2_sleeve_none INTEGER NOT NULL DEFAULT 0,
   mud_motor2_bend_angle_deg TEXT NULL,
   mud_motor2_lobe TEXT NULL,
   mud_motor2_stage TEXT NULL,
   mud_motor2_ibs_gauge_in REAL NULL,
+  mud_motor2_ibs_none INTEGER NOT NULL DEFAULT 0,
 
   bit_brand TEXT NULL,
   bit_kind TEXT NULL,
@@ -269,4 +273,12 @@ CREATE TABLE IF NOT EXISTS well_hse_nozzle (
 
   PRIMARY KEY (well_id, hole_key, bit_index, line_no),
   FOREIGN KEY (well_id) REFERENCES wells(well_id)
+);
+
+-- ----------------------------
+-- App Metadata
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS app_meta (
+  meta_key TEXT PRIMARY KEY,
+  meta_value TEXT NOT NULL
 );

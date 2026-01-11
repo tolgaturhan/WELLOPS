@@ -171,6 +171,15 @@ def _is_blank(v: Any) -> bool:
     return False
 
 
+
+
+def _is_flag_true(v: Any) -> bool:
+    if v is None:
+        return False
+    if isinstance(v, bool):
+        return v
+    s = str(v).strip().lower()
+    return s in ("1", "true", "yes", "y")
 def _as_str(v: Any) -> str:
     return "" if v is None else str(v).strip()
 
@@ -391,10 +400,14 @@ def validate_hole_section(section_data: Dict[str, Any]) -> HoleSectionValidation
     mm1_brand_raw = data.get("mud_motor1_brand") or data.get("mud_motor_brand")
     mm1_size_raw = data.get("mud_motor1_size") or data.get("mud_motor_size")
     mm1_sleeve_raw = data.get("mud_motor1_sleeve_stb_gauge_in") or data.get("mud_motor_sleeve_stb_gauge_in")
+    if _is_flag_true(data.get("mud_motor1_sleeve_none")):
+        mm1_sleeve_raw = "NONE"
     mm1_bend_raw = data.get("mud_motor1_bend_angle_deg") or data.get("mud_motor_bend_angle_deg")
     mm1_lobe_raw = data.get("mud_motor1_lobe") or data.get("mud_motor_lobe")
     mm1_stage_raw = data.get("mud_motor1_stage") or data.get("mud_motor_stage")
     mm1_ibs_raw = data.get("mud_motor1_ibs_gauge_in") or data.get("mud_motor_ibs_gauge_in")
+    if _is_flag_true(data.get("mud_motor1_ibs_none")):
+        mm1_ibs_raw = "NONE"
 
     dd_well_type = _as_str(data.get("dd_well_type"))
     mm1_optional = dd_well_type == "ONLY INCLINATION"
@@ -438,10 +451,14 @@ def validate_hole_section(section_data: Dict[str, Any]) -> HoleSectionValidation
     mm2_brand_raw = _as_str(data.get("mud_motor2_brand"))
     mm2_size_raw = _as_str(data.get("mud_motor2_size"))
     mm2_sleeve_raw = data.get("mud_motor2_sleeve_stb_gauge_in")
+    if _is_flag_true(data.get("mud_motor2_sleeve_none")):
+        mm2_sleeve_raw = "NONE"
     mm2_bend_raw = _as_str(data.get("mud_motor2_bend_angle_deg"))
     mm2_lobe_raw = _as_str(data.get("mud_motor2_lobe"))
     mm2_stage_raw = _as_str(data.get("mud_motor2_stage"))
     mm2_ibs_raw = data.get("mud_motor2_ibs_gauge_in")
+    if _is_flag_true(data.get("mud_motor2_ibs_none")):
+        mm2_ibs_raw = "NONE"
 
     mm2_has_other = any([mm2_size_raw, mm2_bend_raw, mm2_lobe_raw, mm2_stage_raw, _as_str(mm2_sleeve_raw), _as_str(mm2_ibs_raw)])
     if mm2_brand_raw or mm2_has_other:

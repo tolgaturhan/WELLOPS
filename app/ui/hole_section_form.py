@@ -886,15 +886,17 @@ class HoleSectionForm(QWidget):
 
             data[f"mud_motor{motor_index}_brand"] = combo_value(cmb_brand) if isinstance(cmb_brand, QComboBox) else ""
             data[f"mud_motor{motor_index}_size"] = combo_value(cmb_size) if isinstance(cmb_size, QComboBox) else ""
-            data[f"mud_motor{motor_index}_sleeve_stb_gauge_in"] = (
-                edt_sleeve.text().strip() if isinstance(edt_sleeve, QLineEdit) else ""
-            )
+            sleeve_txt = edt_sleeve.text().strip() if isinstance(edt_sleeve, QLineEdit) else ""
+            sleeve_none = 1 if sleeve_txt.upper() == "NONE" else 0
+            data[f"mud_motor{motor_index}_sleeve_stb_gauge_in"] = "" if sleeve_none else sleeve_txt
+            data[f"mud_motor{motor_index}_sleeve_none"] = sleeve_none
             data[f"mud_motor{motor_index}_bend_angle_deg"] = combo_value(cmb_bend) if isinstance(cmb_bend, QComboBox) else ""
             data[f"mud_motor{motor_index}_lobe"] = combo_value(cmb_lobe) if isinstance(cmb_lobe, QComboBox) else ""
             data[f"mud_motor{motor_index}_stage"] = combo_value(cmb_stage) if isinstance(cmb_stage, QComboBox) else ""
-            data[f"mud_motor{motor_index}_ibs_gauge_in"] = (
-                edt_ibs.text().strip() if isinstance(edt_ibs, QLineEdit) else ""
-            )
+            ibs_txt = edt_ibs.text().strip() if isinstance(edt_ibs, QLineEdit) else ""
+            ibs_none = 1 if ibs_txt.upper() == "NONE" else 0
+            data[f"mud_motor{motor_index}_ibs_gauge_in"] = "" if ibs_none else ibs_txt
+            data[f"mud_motor{motor_index}_ibs_none"] = ibs_none
 
         # BIT 1 / BIT 2
         for bit_index in (1, 2):
@@ -1114,6 +1116,16 @@ class HoleSectionForm(QWidget):
             return
         widget.setText(s)
 
+    def _set_gauge_text(self, widget: Optional[QLineEdit], value: object, none_flag: object) -> None:
+        if widget is None:
+            return
+        if none_flag in (1, "1", True):
+            widget.setText("NONE")
+            return
+        if value is None:
+            return
+        widget.setText(str(value))
+
     def _set_decimal_text(self, widget: Optional[QLineEdit], value: object) -> None:
         if widget is None:
             return
@@ -1131,29 +1143,33 @@ class HoleSectionForm(QWidget):
             "brand": row.get("mud_motor1_brand") or row.get("mud_motor_brand"),
             "size": row.get("mud_motor1_size") or row.get("mud_motor_size"),
             "sleeve": row.get("mud_motor1_sleeve_stb_gauge_in") or row.get("mud_motor_sleeve_stb_gauge_in"),
+            "sleeve_none": row.get("mud_motor1_sleeve_none"),
             "bend": row.get("mud_motor1_bend_angle_deg") or row.get("mud_motor_bend_angle_deg"),
             "lobe": row.get("mud_motor1_lobe") or row.get("mud_motor_lobe"),
             "stage": row.get("mud_motor1_stage") or row.get("mud_motor_stage"),
             "ibs": row.get("mud_motor1_ibs_gauge_in") or row.get("mud_motor_ibs_gauge_in"),
+            "ibs_none": row.get("mud_motor1_ibs_none"),
         }
         mm2 = {
             "brand": row.get("mud_motor2_brand"),
             "size": row.get("mud_motor2_size"),
             "sleeve": row.get("mud_motor2_sleeve_stb_gauge_in"),
+            "sleeve_none": row.get("mud_motor2_sleeve_none"),
             "bend": row.get("mud_motor2_bend_angle_deg"),
             "lobe": row.get("mud_motor2_lobe"),
             "stage": row.get("mud_motor2_stage"),
             "ibs": row.get("mud_motor2_ibs_gauge_in"),
+            "ibs_none": row.get("mud_motor2_ibs_none"),
         }
         for motor_index, values in ((1, mm1), (2, mm2)):
             widgets = self._mud_motor_widgets.get(motor_index, {})
             self._set_combo_value(widgets.get("cmb_brand"), values["brand"])
             self._set_combo_value(widgets.get("cmb_size"), values["size"])
-            self._set_decimal_text(widgets.get("edt_sleeve"), values["sleeve"])
+            self._set_gauge_text(widgets.get("edt_sleeve"), values["sleeve"], values.get("sleeve_none"))
             self._set_combo_value(widgets.get("cmb_bend"), values["bend"])
             self._set_combo_value(widgets.get("cmb_lobe"), values["lobe"])
             self._set_combo_value(widgets.get("cmb_stage"), values["stage"])
-            self._set_decimal_text(widgets.get("edt_ibs"), values["ibs"])
+            self._set_gauge_text(widgets.get("edt_ibs"), values["ibs"], values.get("ibs_none"))
 
         # BIT
         bit1_brand = row.get("bit1_brand") or row.get("bit_brand")

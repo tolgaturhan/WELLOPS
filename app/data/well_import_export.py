@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from app.data.db import DB_PATH, SCHEMA_PATH, get_connection
+from app.data.db import DB_PATH, SCHEMA_PATH, SCHEMA_VERSION, get_connection
 
 
 def iso_now() -> str:
@@ -23,6 +23,35 @@ def _open_db(path: Path) -> sqlite3.Connection:
 def _table_columns(conn: sqlite3.Connection, table: str) -> List[str]:
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
     return [row[1] for row in rows]
+
+
+def _get_meta(conn: sqlite3.Connection, key: str) -> str:
+    row = conn.execute(
+        "SELECT meta_value FROM app_meta WHERE meta_key = ?",
+        (key,),
+    ).fetchone()
+    if row is None:
+        return ""
+    return str(row["meta_value"] or "")
+
+
+def _ensure_meta(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_meta (
+          meta_key TEXT PRIMARY KEY,
+          meta_value TEXT NOT NULL
+        )
+        """
+    )
+    row = conn.execute(
+        "SELECT meta_value FROM app_meta WHERE meta_key = 'schema_version'"
+    ).fetchone()
+    if row is None:
+        conn.execute(
+            "INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)",
+            ("schema_version", SCHEMA_VERSION),
+        )
 
 
 def _fetch_rows(
@@ -57,6 +86,11 @@ def export_well_to_db(well_id: str, dest_path: str) -> None:
 
     with get_connection() as src, _open_db(out_path) as dst:
         dst.executescript(schema_sql)
+        _ensure_meta(dst)
+        dst.execute(
+            "UPDATE app_meta SET meta_value = ? WHERE meta_key = ?",
+            (SCHEMA_VERSION, "schema_version"),
+        )
 
         tables = [
             "wells",
@@ -90,6 +124,7 @@ def import_well_from_db(src_path: str) -> Tuple[str, str]:
         raise FileNotFoundError(f"Import file not found: {src_path}")
 
     with _open_db(path) as src:
+        _ensure_meta(src)
         wells_rows = src.execute("SELECT * FROM wells").fetchall()
         if len(wells_rows) != 1:
             raise ValueError("Import file must contain exactly one well.")
@@ -101,6 +136,7 @@ def import_well_from_db(src_path: str) -> Tuple[str, str]:
             raise ValueError("Imported well has no name.")
 
         with get_connection() as dst:
+            _ensure_meta(dst)
             row = dst.execute(
                 "SELECT well_id FROM wells WHERE well_name = ?",
                 (src_well_name,),
@@ -117,6 +153,73 @@ def import_well_from_db(src_path: str) -> Tuple[str, str]:
             _copy_well_data(src, dst, src_well_id, dest_well_id, merge=True)
             dst.commit()
             return dest_well_id, src_well_name
+
+
+def preview_import(src_path: str) -> Dict[str, Any]:
+    path = Path(src_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Import file not found: {src_path}")
+
+    with _open_db(path) as src, get_connection() as dst:
+        _ensure_meta(src)
+        _ensure_meta(dst)
+        src_schema = _get_meta(src, "schema_version")
+        dst_schema = _get_meta(dst, "schema_version")
+
+        wells_rows = src.execute("SELECT * FROM wells").fetchall()
+        if len(wells_rows) != 1:
+            raise ValueError("Import file must contain exactly one well.")
+        src_well = {k: wells_rows[0][k] for k in wells_rows[0].keys()}
+        src_well_id = str(src_well.get("well_id") or "")
+        src_well_name = str(src_well.get("well_name") or "").strip()
+        if not src_well_name:
+            raise ValueError("Imported well has no name.")
+
+        dest_row = dst.execute(
+            "SELECT well_id FROM wells WHERE well_name = ?",
+            (src_well_name,),
+        ).fetchone()
+        has_existing = dest_row is not None
+        dest_well_id = str(dest_row["well_id"]) if dest_row else ""
+
+        summary = {
+            "well_name": src_well_name,
+            "has_existing": has_existing,
+            "src_schema_version": src_schema,
+            "dst_schema_version": dst_schema,
+            "schema_mismatch": bool(src_schema and dst_schema and src_schema != dst_schema),
+            "identity_fill": 0,
+            "identity_conflict": 0,
+            "trajectory_actual_replace": False,
+            "trajectory_actual_src_md": None,
+            "trajectory_actual_dest_md": None,
+            "hole_section_fill": 0,
+            "hole_section_conflict": 0,
+            "hole_sections_new": 0,
+            "tickets_new": 0,
+            "nozzles_new": 0,
+            "section_nodes_new": 0,
+        }
+
+        if not has_existing:
+            return summary
+
+        _preview_identity(src, dst, src_well_id, dest_well_id, summary)
+        _preview_trajectory(src, dst, src_well_id, dest_well_id, summary)
+        _preview_section_nodes(src, dst, src_well_id, dest_well_id, summary)
+        _preview_hole_sections(src, dst, src_well_id, dest_well_id, summary)
+        _preview_hole_section_data(src, dst, src_well_id, dest_well_id, summary)
+        _preview_tickets(src, dst, src_well_id, dest_well_id, summary)
+        _preview_nozzles(src, dst, src_well_id, dest_well_id, summary)
+
+        return summary
+
+
+def create_backup() -> str:
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = DB_PATH.parent / f"wellops_backup_{now}.db"
+    backup_path.write_bytes(Path(DB_PATH).read_bytes())
+    return str(backup_path)
 
 
 def _insert_new_well(conn: sqlite3.Connection, new_id: str, src_well: Dict[str, Any]) -> None:
@@ -215,6 +318,184 @@ def _is_blank(value: Any) -> bool:
     if isinstance(value, str):
         return not value.strip()
     return False
+
+
+def _preview_identity(
+    src: sqlite3.Connection,
+    dst: sqlite3.Connection,
+    src_well_id: str,
+    dest_well_id: str,
+    summary: Dict[str, Any],
+) -> None:
+    src_row = src.execute(
+        "SELECT * FROM well_identity WHERE well_id = ?",
+        (src_well_id,),
+    ).fetchone()
+    dest_row = dst.execute(
+        "SELECT * FROM well_identity WHERE well_id = ?",
+        (dest_well_id,),
+    ).fetchone()
+    if src_row is None or dest_row is None:
+        return
+    for key in src_row.keys():
+        if key in ("well_id", "well_name"):
+            continue
+        src_val = src_row[key]
+        dest_val = dest_row[key]
+        if _is_blank(dest_val) and not _is_blank(src_val):
+            summary["identity_fill"] += 1
+        elif not _is_blank(dest_val) and not _is_blank(src_val) and str(dest_val) != str(src_val):
+            summary["identity_conflict"] += 1
+
+
+def _preview_trajectory(
+    src: sqlite3.Connection,
+    dst: sqlite3.Connection,
+    src_well_id: str,
+    dest_well_id: str,
+    summary: Dict[str, Any],
+) -> None:
+    src_row = src.execute(
+        "SELECT * FROM well_trajectory WHERE well_id = ?",
+        (src_well_id,),
+    ).fetchone()
+    dest_row = dst.execute(
+        "SELECT * FROM well_trajectory WHERE well_id = ?",
+        (dest_well_id,),
+    ).fetchone()
+    if src_row is None or dest_row is None:
+        return
+    src_md = src_row["md_at_td_m"]
+    dest_md = dest_row["md_at_td_m"]
+    summary["trajectory_actual_src_md"] = src_md
+    summary["trajectory_actual_dest_md"] = dest_md
+    if src_md is None:
+        return
+    if dest_md is None or float(src_md) > float(dest_md):
+        summary["trajectory_actual_replace"] = True
+
+
+def _preview_section_nodes(
+    src: sqlite3.Connection,
+    dst: sqlite3.Connection,
+    src_well_id: str,
+    dest_well_id: str,
+    summary: Dict[str, Any],
+) -> None:
+    rows = _fetch_rows(src, "well_section_nodes", "well_id = ?", (src_well_id,))
+    for r in rows:
+        node_key = r.get("node_key")
+        if not node_key:
+            continue
+        exists = dst.execute(
+            "SELECT 1 FROM well_section_nodes WHERE well_id = ? AND node_key = ?",
+            (dest_well_id, node_key),
+        ).fetchone()
+        if exists is None:
+            summary["section_nodes_new"] += 1
+
+
+def _preview_hole_sections(
+    src: sqlite3.Connection,
+    dst: sqlite3.Connection,
+    src_well_id: str,
+    dest_well_id: str,
+    summary: Dict[str, Any],
+) -> None:
+    rows = _fetch_rows(src, "well_hole_sections", "well_id = ?", (src_well_id,))
+    for r in rows:
+        node_key = r.get("node_key")
+        if not node_key:
+            continue
+        exists = dst.execute(
+            "SELECT 1 FROM well_hole_sections WHERE well_id = ? AND node_key = ?",
+            (dest_well_id, node_key),
+        ).fetchone()
+        if exists is None:
+            summary["hole_sections_new"] += 1
+
+
+def _preview_hole_section_data(
+    src: sqlite3.Connection,
+    dst: sqlite3.Connection,
+    src_well_id: str,
+    dest_well_id: str,
+    summary: Dict[str, Any],
+) -> None:
+    rows = _fetch_rows(src, "well_hole_section_data", "well_id = ?", (src_well_id,))
+    if not rows:
+        return
+    cols = _table_columns(dst, "well_hole_section_data")
+    for r in rows:
+        hole_key = r.get("hole_key")
+        if not hole_key:
+            continue
+        dest = dst.execute(
+            "SELECT * FROM well_hole_section_data WHERE well_id = ? AND hole_key = ?",
+            (dest_well_id, hole_key),
+        ).fetchone()
+        if dest is None:
+            filled = sum(1 for c in cols if c not in ("well_id", "hole_key", "updated_at") and not _is_blank(r.get(c)))
+            summary["hole_section_fill"] += filled
+            continue
+        for c in cols:
+            if c in ("well_id", "hole_key", "updated_at"):
+                continue
+            src_val = r.get(c)
+            dest_val = dest[c]
+            if _is_blank(dest_val) and not _is_blank(src_val):
+                summary["hole_section_fill"] += 1
+            elif not _is_blank(dest_val) and not _is_blank(src_val) and str(dest_val) != str(src_val):
+                summary["hole_section_conflict"] += 1
+
+
+def _preview_tickets(
+    src: sqlite3.Connection,
+    dst: sqlite3.Connection,
+    src_well_id: str,
+    dest_well_id: str,
+    summary: Dict[str, Any],
+) -> None:
+    rows = _fetch_rows(src, "well_hse_ticket", "well_id = ?", (src_well_id,))
+    for r in rows:
+        hole_key = r.get("hole_key")
+        line_no = r.get("line_no")
+        if not hole_key or line_no is None:
+            continue
+        dest = dst.execute(
+            """
+            SELECT 1 FROM well_hse_ticket
+            WHERE well_id = ? AND hole_key = ? AND line_no = ?
+            """,
+            (dest_well_id, hole_key, line_no),
+        ).fetchone()
+        if dest is None:
+            summary["tickets_new"] += 1
+
+
+def _preview_nozzles(
+    src: sqlite3.Connection,
+    dst: sqlite3.Connection,
+    src_well_id: str,
+    dest_well_id: str,
+    summary: Dict[str, Any],
+) -> None:
+    rows = _fetch_rows(src, "well_hse_nozzle", "well_id = ?", (src_well_id,))
+    for r in rows:
+        hole_key = r.get("hole_key")
+        bit_index = r.get("bit_index")
+        line_no = r.get("line_no")
+        if not hole_key or bit_index is None or line_no is None:
+            continue
+        dest = dst.execute(
+            """
+            SELECT 1 FROM well_hse_nozzle
+            WHERE well_id = ? AND hole_key = ? AND bit_index = ? AND line_no = ?
+            """,
+            (dest_well_id, hole_key, bit_index, line_no),
+        ).fetchone()
+        if dest is None:
+            summary["nozzles_new"] += 1
 
 
 def _merge_identity(

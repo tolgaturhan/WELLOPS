@@ -628,10 +628,92 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            from app.data.well_import_export import import_well_from_db  # type: ignore
+            from app.data.well_import_export import (  # type: ignore
+                import_well_from_db,
+                preview_import,
+                create_backup,
+            )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Import module could not be loaded.\n\nDetails:\n{e!r}")
             return
+
+        try:
+            preview = preview_import(file_path)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to read import file.\n\nDetails:\n{e!r}")
+            return
+
+        if preview.get("schema_mismatch"):
+            msg = (
+                "Schema version mismatch detected.\n\n"
+                f"Import file version: {preview.get('src_schema_version')}\n"
+                f"Current database version: {preview.get('dst_schema_version')}\n\n"
+                "Importing may fail or produce inconsistent data.\n"
+                "Do you want to continue?"
+            )
+            res = QMessageBox.question(
+                self,
+                "Schema Version Mismatch",
+                msg,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if res != QMessageBox.Yes:
+                return
+
+        summary_lines = [
+            f"Well Name: {preview.get('well_name')}",
+        ]
+        if preview.get("has_existing"):
+            summary_lines.extend(
+                [
+                    "Mode: Merge into existing well",
+                    f"Identity fields to fill: {preview.get('identity_fill')}",
+                    f"Identity conflicts (kept existing): {preview.get('identity_conflict')}",
+                    f"Hole section fields to fill: {preview.get('hole_section_fill')}",
+                    f"Hole section conflicts (kept existing): {preview.get('hole_section_conflict')}",
+                    f"New section nodes: {preview.get('section_nodes_new')}",
+                    f"New enabled hole sections: {preview.get('hole_sections_new')}",
+                    f"New tickets: {preview.get('tickets_new')}",
+                    f"New nozzles: {preview.get('nozzles_new')}",
+                ]
+            )
+            if preview.get("trajectory_actual_replace"):
+                summary_lines.append(
+                    "Trajectory ACTUAL: will be replaced based on larger Well MD at TD."
+                )
+            else:
+                summary_lines.append(
+                    "Trajectory ACTUAL: existing values will be kept."
+                )
+        else:
+            summary_lines.append("Mode: Import as new well")
+
+        msg = "Import Summary:\n\n" + "\n".join(f"- {line}" for line in summary_lines)
+        res = QMessageBox.question(
+            self,
+            "Confirm Import",
+            msg,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if res != QMessageBox.Yes:
+            return
+
+        res = QMessageBox.question(
+            self,
+            "Create Backup",
+            "Create a backup of the current database before importing?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if res == QMessageBox.Yes:
+            try:
+                backup_path = create_backup()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to create backup.\n\nDetails:\n{e!r}")
+                return
+            QMessageBox.information(self, "Information", f"Backup created:\n{backup_path}")
 
         try:
             well_id, well_name = import_well_from_db(file_path)
@@ -640,6 +722,9 @@ class MainWindow(QMainWindow):
             return
 
         self.reload_wells()
+        for key in list(self._widget_cache.keys()):
+            if key[0] == well_id:
+                del self._widget_cache[key]
         self.well_tree.select_well_root(well_id)
         QMessageBox.information(self, "Information", f"Well '{well_name}' imported successfully.")
 

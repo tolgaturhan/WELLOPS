@@ -7,6 +7,7 @@ from pathlib import Path
 DATA_DIR = Path(__file__).resolve().parent
 DB_PATH = DATA_DIR / "wellops.db"
 SCHEMA_PATH = DATA_DIR / "schema.sql"
+SCHEMA_VERSION = "2025.02.20"
 
 
 def get_connection() -> sqlite3.Connection:
@@ -33,6 +34,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(sql)
     _ensure_wells_columns(conn)
     _ensure_hole_section_columns(conn)
+    _ensure_app_meta(conn)
     conn.commit()
 
 
@@ -92,6 +94,8 @@ def _ensure_hole_section_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor1_size TEXT NULL")
     if "mud_motor1_sleeve_stb_gauge_in" not in existing:
         conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor1_sleeve_stb_gauge_in REAL NULL")
+    if "mud_motor1_sleeve_none" not in existing:
+        conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor1_sleeve_none INTEGER NOT NULL DEFAULT 0")
     if "mud_motor1_bend_angle_deg" not in existing:
         conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor1_bend_angle_deg TEXT NULL")
     if "mud_motor1_lobe" not in existing:
@@ -100,12 +104,16 @@ def _ensure_hole_section_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor1_stage TEXT NULL")
     if "mud_motor1_ibs_gauge_in" not in existing:
         conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor1_ibs_gauge_in REAL NULL")
+    if "mud_motor1_ibs_none" not in existing:
+        conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor1_ibs_none INTEGER NOT NULL DEFAULT 0")
     if "mud_motor2_brand" not in existing:
         conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor2_brand TEXT NULL")
     if "mud_motor2_size" not in existing:
         conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor2_size TEXT NULL")
     if "mud_motor2_sleeve_stb_gauge_in" not in existing:
         conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor2_sleeve_stb_gauge_in REAL NULL")
+    if "mud_motor2_sleeve_none" not in existing:
+        conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor2_sleeve_none INTEGER NOT NULL DEFAULT 0")
     if "mud_motor2_bend_angle_deg" not in existing:
         conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor2_bend_angle_deg TEXT NULL")
     if "mud_motor2_lobe" not in existing:
@@ -114,6 +122,8 @@ def _ensure_hole_section_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor2_stage TEXT NULL")
     if "mud_motor2_ibs_gauge_in" not in existing:
         conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor2_ibs_gauge_in REAL NULL")
+    if "mud_motor2_ibs_none" not in existing:
+        conn.execute("ALTER TABLE well_hole_section_data ADD COLUMN mud_motor2_ibs_none INTEGER NOT NULL DEFAULT 0")
 
     personnel_cols = [
         "personnel_day_dd_1",
@@ -211,3 +221,29 @@ def _ensure_nozzle_table(conn: sqlite3.Connection) -> None:
     )
     conn.execute("DROP TABLE well_hse_nozzle")
     conn.execute("ALTER TABLE well_hse_nozzle_new RENAME TO well_hse_nozzle")
+
+
+def _ensure_app_meta(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_meta (
+          meta_key TEXT PRIMARY KEY,
+          meta_value TEXT NOT NULL
+        )
+        """
+    )
+    row = conn.execute(
+        "SELECT meta_value FROM app_meta WHERE meta_key = 'schema_version'"
+    ).fetchone()
+    if row is None:
+        conn.execute(
+            "INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)",
+            ("schema_version", SCHEMA_VERSION),
+        )
+    else:
+        current = str(row[0] or "")
+        if current != SCHEMA_VERSION:
+            conn.execute(
+                "UPDATE app_meta SET meta_value = ? WHERE meta_key = ?",
+                (SCHEMA_VERSION, "schema_version"),
+            )
