@@ -109,6 +109,23 @@ class WellTreeWidget(QWidget):
                 self.tree.scrollToItem(item)
                 return
 
+    def select_node(self, well_id: str, node_key: str) -> None:
+        """
+        Select any node by well_id + node_key.
+        """
+        target_well = (well_id or "").strip()
+        target_key = (node_key or "").strip()
+        if not target_well or not target_key:
+            return
+
+        for i in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(i)
+            found = self._find_item(item, target_well, target_key)
+            if found is not None:
+                self.tree.setCurrentItem(found)
+                self.tree.scrollToItem(found)
+                return
+
     def expand_only_well(self, well_id: str) -> None:
         """
         Expand all nodes under the target well and collapse other wells.
@@ -148,17 +165,22 @@ class WellTreeWidget(QWidget):
                 continue
 
             well_name = str(w.get("name", "")).strip() or "WELL"
+            operation_type = str(w.get("operation_type", "") or "")
+            display_name = (
+                f"{well_name} ({operation_type})" if operation_type else well_name
+            )
 
             # Top-level node: WELL NAME (label is actual well name)
             well_root = self._make_item(
-                text=well_name,
+                text=display_name,
                 well_id=well_id,
                 node_key="WELL_NAME",
             )
             self.tree.addTopLevelItem(well_root)
 
             # Subsections under the well name root
-            self._add_standard_children(well_root, well_id)
+            if operation_type.lower() == "directional drilling":
+                self._add_standard_children(well_root, well_id)
 
             # Expand well root by default
             well_root.setExpanded(True)
@@ -229,6 +251,20 @@ class WellTreeWidget(QWidget):
         item.setExpanded(expanded)
         for i in range(item.childCount()):
             self._set_expanded_recursive(item.child(i), expanded)
+
+    def _find_item(
+        self, item: QTreeWidgetItem, well_id: str, node_key: str
+    ) -> Optional[QTreeWidgetItem]:
+        if (
+            str(item.data(0, self._ROLE_WELL_ID) or "") == well_id
+            and str(item.data(0, self._ROLE_NODE_KEY) or "") == node_key
+        ):
+            return item
+        for i in range(item.childCount()):
+            found = self._find_item(item.child(i), well_id, node_key)
+            if found is not None:
+                return found
+        return None
 
     def _make_item(self, text: str, well_id: str, node_key: str) -> QTreeWidgetItem:
         item = QTreeWidgetItem([text])

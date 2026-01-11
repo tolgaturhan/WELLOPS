@@ -49,7 +49,7 @@ from app.core.hole_section_calcs import (
     eff_drilling_percent,
 )
 
-from app.data import hole_section_data_repo
+from app.data import hole_section_data_repo, identity_repo
 from app.ui.dialogs.nozzle_dialog import NozzleDialog
 from app.ui.widgets.decimal_line_edit import DecimalLineEdit
 from app.ui.widgets.time_hhmm_edit import TimeHHMMEdit
@@ -952,7 +952,18 @@ class HoleSectionForm(QWidget):
         data["ta_release_date"] = self.dp_release_date.date_value() if self.dp_release_date else None
         data["ta_release_time"] = self.edt_release_time.text().strip() if self.edt_release_time else ""
 
+        data["dd_well_type"] = self._get_dd_well_type()
+
         return data
+
+    def _get_dd_well_type(self) -> str:
+        try:
+            row = identity_repo.get_identity(self._well_id)
+        except Exception:
+            return ""
+        if not row:
+            return ""
+        return str(row.get("dd_well_type") or "").strip()
 
     def _apply_computed(self, computed: Dict[str, Any]) -> None:
         # times

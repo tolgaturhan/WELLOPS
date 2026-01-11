@@ -217,6 +217,16 @@ def _require_choice(value: Any, allowed: Sequence[str], field_label: str, errors
     return s
 
 
+def _optional_choice(value: Any, allowed: Sequence[str], field_label: str, errors: List[str]) -> str:
+    s = _as_str(value)
+    if not s:
+        return ""
+    if s not in allowed:
+        errors.append(f"{field_label} must be selected from the list.")
+        return ""
+    return s
+
+
 def _require_text(value: Any, field_label: str, errors: List[str]) -> str:
     s = _as_str(value)
     if not s:
@@ -345,6 +355,7 @@ def validate_hole_section(section_data: Dict[str, Any]) -> HoleSectionValidation
 
     # -------------------------------------------------
     # MUD MOTOR-1 (required) + MUD MOTOR-2 (optional)
+    # If DD Well Type is ONLY INCLINATION, MUD MOTOR-1 is optional.
     # -------------------------------------------------
     mm1_brand_raw = data.get("mud_motor1_brand") or data.get("mud_motor_brand")
     mm1_size_raw = data.get("mud_motor1_size") or data.get("mud_motor_size")
@@ -354,28 +365,40 @@ def validate_hole_section(section_data: Dict[str, Any]) -> HoleSectionValidation
     mm1_stage_raw = data.get("mud_motor1_stage") or data.get("mud_motor_stage")
     mm1_ibs_raw = data.get("mud_motor1_ibs_gauge_in") or data.get("mud_motor_ibs_gauge_in")
 
-    computed["mud_motor1_brand"] = _require_choice(mm1_brand_raw, MUD_MOTOR_BRANDS, "MUD MOTOR-1 / BRAND", errors)
-    computed["mud_motor1_size"] = _require_choice(mm1_size_raw, MUD_MOTOR_SIZES, "MUD MOTOR-1 / SIZE", errors)
+    dd_well_type = _as_str(data.get("dd_well_type"))
+    mm1_optional = dd_well_type == "ONLY INCLINATION"
 
-    sleeve = _require_decimal(
-        mm1_sleeve_raw,
-        "MUD MOTOR-1 / SLEEVE STB GAUGE (IN)",
-        errors,
-        empty_msg='MUD MOTOR-1 / SLEEVE STB GAUGE (IN) is required (e.g., 12.125).',
-    )
-    computed["mud_motor1_sleeve_stb_gauge_in"] = sleeve
+    if mm1_optional and _is_blank(mm1_brand_raw) and _is_blank(mm1_size_raw) and _is_blank(mm1_sleeve_raw) and _is_blank(mm1_bend_raw) and _is_blank(mm1_lobe_raw) and _is_blank(mm1_stage_raw) and _is_blank(mm1_ibs_raw):
+        computed["mud_motor1_brand"] = ""
+        computed["mud_motor1_size"] = ""
+        computed["mud_motor1_sleeve_stb_gauge_in"] = None
+        computed["mud_motor1_bend_angle_deg"] = ""
+        computed["mud_motor1_lobe"] = ""
+        computed["mud_motor1_stage"] = ""
+        computed["mud_motor1_ibs_gauge_in"] = None
+    else:
+        computed["mud_motor1_brand"] = _require_choice(mm1_brand_raw, MUD_MOTOR_BRANDS, "MUD MOTOR-1 / BRAND", errors)
+        computed["mud_motor1_size"] = _require_choice(mm1_size_raw, MUD_MOTOR_SIZES, "MUD MOTOR-1 / SIZE", errors)
 
-    computed["mud_motor1_bend_angle_deg"] = _require_choice(
-        mm1_bend_raw,
-        BEND_ANGLES_DEG,
-        "MUD MOTOR-1 / BEND ANGLE (DEG)",
-        errors,
-    )
+        sleeve = _require_decimal(
+            mm1_sleeve_raw,
+            "MUD MOTOR-1 / SLEEVE STB GAUGE (IN)",
+            errors,
+            empty_msg='MUD MOTOR-1 / SLEEVE STB GAUGE (IN) is required (e.g., 12.125).',
+        )
+        computed["mud_motor1_sleeve_stb_gauge_in"] = sleeve
 
-    computed["mud_motor1_lobe"] = _require_choice(mm1_lobe_raw, LOBE_LIST, "MUD MOTOR-1 / LOBE", errors)
-    computed["mud_motor1_stage"] = _require_choice(mm1_stage_raw, STAGE_LIST, "MUD MOTOR-1 / STAGE", errors)
+        computed["mud_motor1_bend_angle_deg"] = _require_choice(
+            mm1_bend_raw,
+            BEND_ANGLES_DEG,
+            "MUD MOTOR-1 / BEND ANGLE (DEG)",
+            errors,
+        )
 
-    computed["mud_motor1_ibs_gauge_in"] = _optional_decimal(mm1_ibs_raw, "MUD MOTOR-1 / IBS GAUGE (IN)", errors)
+        computed["mud_motor1_lobe"] = _require_choice(mm1_lobe_raw, LOBE_LIST, "MUD MOTOR-1 / LOBE", errors)
+        computed["mud_motor1_stage"] = _require_choice(mm1_stage_raw, STAGE_LIST, "MUD MOTOR-1 / STAGE", errors)
+
+        computed["mud_motor1_ibs_gauge_in"] = _optional_decimal(mm1_ibs_raw, "MUD MOTOR-1 / IBS GAUGE (IN)", errors)
 
     mm2_brand_raw = _as_str(data.get("mud_motor2_brand"))
     mm2_size_raw = _as_str(data.get("mud_motor2_size"))
@@ -564,6 +587,23 @@ def validate_hole_section(section_data: Dict[str, Any]) -> HoleSectionValidation
         MUD_TYPE_OPTIONS,
         "INFO / MUD TYPE",
         errors,
+    )
+
+    computed["info_section_tvd"] = _require_decimal(
+        data.get("info_section_tvd"),
+        "INFO / SECTION TVD (METER)",
+        errors,
+        min_value=0.0,
+        min_strict=True,
+        empty_msg="INFO / SECTION TVD (METER) is required and must be greater than 0.",
+    )
+    computed["info_section_md"] = _require_decimal(
+        data.get("info_section_md"),
+        "INFO / SECTION MD (METER)",
+        errors,
+        min_value=0.0,
+        min_strict=True,
+        empty_msg="INFO / SECTION MD (METER) is required and must be greater than 0.",
     )
 
     # -------------------------------------------------

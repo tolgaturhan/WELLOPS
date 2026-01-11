@@ -52,6 +52,8 @@ def _ensure_wells_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE wells ADD COLUMN section_template_key TEXT NULL")
     if "sections_version" not in existing:
         conn.execute("ALTER TABLE wells ADD COLUMN sections_version INTEGER NULL")
+    if "operation_type" not in existing:
+        conn.execute("ALTER TABLE wells ADD COLUMN operation_type TEXT NULL")
 
 
 def _ensure_hole_section_columns(conn: sqlite3.Connection) -> None:

@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS wells (
   -- identity
   well_name TEXT NOT NULL,
 
+  -- operation type
+  operation_type TEXT NULL,
+
   -- lifecycle
   status TEXT NOT NULL,                -- DRAFT | ACTIVE | ARCHIVED
   step1_done INTEGER NOT NULL DEFAULT 0,

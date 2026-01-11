@@ -17,7 +17,7 @@ def uuid4_str() -> str:
     return str(uuid.uuid4())
 
 
-def create_draft_well(well_name: str) -> str:
+def create_draft_well(well_name: str, operation_type: str | None = None) -> str:
     """
     Creates a new well row with status='DRAFT' and returns well_id (TEXT/UUID).
 
@@ -33,23 +33,27 @@ def create_draft_well(well_name: str) -> str:
     now = iso_now()
     well_id = uuid4_str()
 
+    op_type = (operation_type or "").strip() or None
+
     with get_connection() as conn:
         conn.execute(
             """
             INSERT INTO wells (
               well_id,
               well_name,
+              operation_type,
               status,
               step1_done,
               section_template_key,
               sections_version,
               created_at,
               updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 well_id,
                 name,
+                op_type,
                 "DRAFT",
                 0,
                 None,
@@ -74,7 +78,7 @@ def list_wells(status: Optional[str] = None) -> List[Dict[str, Any]]:
       - updated_at: str
     """
     sql = """
-        SELECT well_id, well_name, status, created_at, updated_at
+        SELECT well_id, well_name, operation_type, status, created_at, updated_at
         FROM wells
     """
     params: tuple = ()
@@ -91,6 +95,7 @@ def list_wells(status: Optional[str] = None) -> List[Dict[str, Any]]:
         {
             "id": str(r["well_id"]),
             "name": str(r["well_name"]),
+            "operation_type": str(r["operation_type"] or ""),
             "status": str(r["status"]),
             "created_at": str(r["created_at"]),
             "updated_at": str(r["updated_at"]),
@@ -110,7 +115,7 @@ def get_well(well_id: str) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
         r = conn.execute(
             """
-            SELECT well_id, well_name, status, step1_done,
+            SELECT well_id, well_name, operation_type, status, step1_done,
                    section_template_key, sections_version,
                    created_at, updated_at
             FROM wells
@@ -125,6 +130,7 @@ def get_well(well_id: str) -> Optional[Dict[str, Any]]:
     return {
         "id": str(r["well_id"]),
         "name": str(r["well_name"]),
+        "operation_type": str(r["operation_type"] or ""),
         "status": str(r["status"]),
         "step1_done": int(r["step1_done"]),
         "section_template_key": r["section_template_key"],

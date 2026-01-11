@@ -111,7 +111,9 @@ class Step1WellIdentity(QWidget):
         self.dd_well_type.addItem("Select from list")
         self.dd_well_type.model().item(0).setEnabled(False)
         self.dd_well_type.setCurrentIndex(0)
-        self.dd_well_type.addItems(["VERTICAL", "J-TYPE", "S-TYPE", "SIDE-TRACK", "HORIZONTAL"])
+        self.dd_well_type.addItems(
+            ["VERTICAL", "J-TYPE", "S-TYPE", "SIDE-TRACK", "HORIZONTAL", "PERFORMANCE", "ONLY INCLINATION"]
+        )
         self.dd_well_type.setStyleSheet("QComboBox { padding-left: 6px; }")
         self.form.addRow("DD Well Type", self.dd_well_type)
 

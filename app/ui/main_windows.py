@@ -43,6 +43,18 @@ def _repo_create_draft_well():
         ) from e
 
 
+def _repo_get_well():
+    """Lazy import for wells repository (keeps UI import-safe)."""
+    try:
+        from app.data.wells_repo import get_well  # type: ignore
+        return get_well
+    except Exception as e:  # pragma: no cover
+        raise ImportError(
+            "Repository module not available: app.data.wells_repo.get_well. "
+            "Check project wiring."
+        ) from e
+
+
 def _repo_delete_well():
     """Lazy import for wells repository (keeps UI import-safe)."""
     try:
@@ -334,8 +346,8 @@ class MainWindow(QMainWindow):
     # ----------------------------------------------------------------------------------
     def _on_create_new_well(self) -> None:
         """
-        FINAL flow:
-          NewWellDialog -> creates DRAFT well -> opens WizardNewWell(well_id, well_name)
+        Final flow:
+          NewWellDialog -> creates DRAFT well -> selects WELL IDENTITY for Directional Drilling
         """
         try:
             from app.ui.dialogs.new_well_dialog import NewWellDialog  # type: ignore
@@ -354,6 +366,7 @@ class MainWindow(QMainWindow):
 
         # Get well name from dialog (supports both method- and attribute-based dialogs)
         well_name = ""
+        operation_type = ""
 
         getter = getattr(dlg, "get_well_name", None)
         if callable(getter):
@@ -370,33 +383,38 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "Well Name cannot be empty.")
             return
 
+        # Operation type (required)
+        op_getter = getattr(dlg, "operation_type", None)
+        if callable(op_getter):
+            operation_type = (op_getter() or "").strip()
+        else:
+            operation_type = str(getattr(dlg, "operation_type", "") or "").strip()
+        if not operation_type:
+            QMessageBox.warning(self, "Warning", "Operation Type cannot be empty.")
+            return
+
         # Create DRAFT well row (DB) -> returns well_id (TEXT)
         try:
-            well_id = str(_repo_create_draft_well()(well_name))
+            well_id = str(_repo_create_draft_well()(well_name, operation_type))
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to create draft well.\n\nDetails:\n{e!r}")
             return
 
         # Refresh tree and select the well
         self.reload_wells()
-        # FIX: WellTreeWidget API is select_well_root (not select_well_by_id)
-        self.well_tree.select_well_root(well_id)
 
-        # Open wizard on right panel
-        wiz = self._create_wizard_new_well(well_id=well_id, well_name=well_name)
-        self._show_widget(wiz)
-
-    def _create_wizard_new_well(self, well_id: str, well_name: str):
-        try:
-            from app.ui.wizard.wizard_new_well import WizardNewWell  # type: ignore
-        except Exception:
-            return _SimpleMessagePage("WizardNewWell could not be loaded.")
-
-        # Be tolerant for constructor signature differences
-        try:
-            return WizardNewWell(well_id=well_id, well_name=well_name)
-        except TypeError:
-            return WizardNewWell(well_id, well_name)
+        # Open Well Identity on right panel only for Directional Drilling
+        if operation_type.lower() == "directional drilling":
+            self.well_tree.select_node(well_id, "WELL_IDENTITY")
+            self._on_tree_node_clicked(well_id, "WELL_IDENTITY")
+        else:
+            self.well_tree.select_well_root(well_id)
+            self._show_widget(
+                _SimpleMessagePage(
+                    "Under Construction.\n\n"
+                    "This operation type is currently under design and will be available soon."
+                )
+            )
 
     # ----------------------------------------------------------------------------------
     # Router (single router UX) - keep as-is in your snapshot
@@ -424,6 +442,20 @@ class MainWindow(QMainWindow):
 
     def _route_node_to_widget(self, well_id: str, node_key: str) -> QWidget:
         if node_key == "WELL_NAME":
+            op_type = ""
+            try:
+                row = _repo_get_well()(well_id)
+                if row:
+                    op_type = str(row.get("operation_type") or "")
+            except Exception:
+                op_type = ""
+
+            if op_type and op_type.lower() != "directional drilling":
+                return _SimpleMessagePage(
+                    "Under Construction.\n\n"
+                    "This operation type is currently under design and will be available soon."
+                )
+
             try:
                 from app.ui.well_overview_page import WellOverviewPage  # type: ignore
             except Exception:
