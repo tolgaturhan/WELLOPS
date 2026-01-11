@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QMenuBar,
     QApplication,
+    QFileDialog,
 )
 
 
@@ -159,6 +160,7 @@ class MainWindow(QMainWindow):
         # IMPORTANT: WellTreeWidget emits node_clicked (well_id, node_key)
         self.well_tree.node_clicked.connect(self._on_tree_node_clicked)
         self.well_tree.well_delete_requested.connect(self._on_well_delete_requested)
+        self.well_tree.well_export_requested.connect(self._on_well_export_requested)
 
         # Menu
         self._build_menu()
@@ -175,6 +177,7 @@ class MainWindow(QMainWindow):
 
         menu_file = menubar.addMenu("File")
         menu_view = menubar.addMenu("View")
+        menu_db = menubar.addMenu("Database")
 
         self.act_new_well = QAction("Create New Well", self)
         self.act_new_well.triggered.connect(self._on_create_new_well)
@@ -197,6 +200,10 @@ class MainWindow(QMainWindow):
         self.act_light_mode = QAction("Light Mode", self)
         self.act_light_mode.triggered.connect(lambda: self._apply_theme("light"))
         menu_view.addAction(self.act_light_mode)
+
+        self.act_import_well = QAction("Import Well", self)
+        self.act_import_well.triggered.connect(self._on_import_well)
+        menu_db.addAction(self.act_import_well)
 
     def _apply_theme(self, theme: str) -> None:
         app = QApplication.instance()
@@ -580,6 +587,67 @@ class MainWindow(QMainWindow):
                 del self._widget_cache[key]
 
         self.reload_wells()
+
+    def _on_well_export_requested(self, well_id: str, well_name: str) -> None:
+        wid = str(well_id).strip()
+        if not wid:
+            return
+
+        safe_name = self._safe_filename(well_name or "well")
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Well to Database",
+            f"{safe_name}.db",
+            "Database Files (*.db)",
+        )
+        if not file_path:
+            return
+
+        try:
+            from app.data.well_import_export import export_well_to_db  # type: ignore
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Export module could not be loaded.\n\nDetails:\n{e!r}")
+            return
+
+        try:
+            export_well_to_db(wid, file_path)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to export well.\n\nDetails:\n{e!r}")
+            return
+
+        QMessageBox.information(self, "Information", "Well exported successfully.")
+
+    def _on_import_well(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Well",
+            "",
+            "Database Files (*.db)",
+        )
+        if not file_path:
+            return
+
+        try:
+            from app.data.well_import_export import import_well_from_db  # type: ignore
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Import module could not be loaded.\n\nDetails:\n{e!r}")
+            return
+
+        try:
+            well_id, well_name = import_well_from_db(file_path)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to import well.\n\nDetails:\n{e!r}")
+            return
+
+        self.reload_wells()
+        self.well_tree.select_well_root(well_id)
+        QMessageBox.information(self, "Information", f"Well '{well_name}' imported successfully.")
+
+    @staticmethod
+    def _safe_filename(name: str) -> str:
+        invalid = '<>:"/\\|?*'
+        out = "".join(ch for ch in (name or "") if ch not in invalid).strip()
+        return out or "well"
 
     def closeEvent(self, event) -> None:
         try:

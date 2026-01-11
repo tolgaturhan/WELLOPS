@@ -25,6 +25,7 @@ class WellTreeWidget(QWidget):
 
     node_clicked = Signal(str, str)
     well_delete_requested = Signal(str, str)  # well_id, well_name
+    well_export_requested = Signal(str, str)  # well_id, well_name
 
     _ROLE_NODE_KEY = Qt.UserRole + 101
     _ROLE_WELL_ID = Qt.UserRole + 102
@@ -302,8 +303,12 @@ class WellTreeWidget(QWidget):
             return
 
         menu = QMenu(self.tree)
+        act_export = menu.addAction("Export Well to Database")
         act_delete = menu.addAction("Delete Well")
 
         action = menu.exec(self.tree.viewport().mapToGlobal(pos))
+        if action == act_export:
+            self.well_export_requested.emit(str(well_id), str(well_name))
+            return
         if action == act_delete:
             self.well_delete_requested.emit(str(well_id), str(well_name))
