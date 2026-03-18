@@ -108,4 +108,3 @@ class StabilizerGaugeConverterDialog(QDialog):
         out = f"{value:.3f}".rstrip("0").rstrip(".")
         self._result_text = out
         self.accept()
-
